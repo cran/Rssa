@@ -1,0 +1,74 @@
+useDynLib(Rssa)
+
+import(lattice)
+import(svd)
+
+export(clone,
+       decompose,
+       decompose.default,
+       reconstruct,
+       nu,
+       nv,
+       nlambda,
+       calc.v,
+       precache,
+       cleanup,
+       new.ssa,
+       clusterify,
+       wcor,
+       wcor.default,
+# Hankel matrix' routines
+       new.hmat,
+       hmatmul,
+       hankel,
+       hcols,
+       hrows,
+       is.hmat,
+# Hankel-block hankel matrix' routines
+       new.hbhmat,
+       hbhmatmul,
+       hbhcols,
+       hbhrows,
+       is.hbhmat,
+# Symmetric toeplitz matrix' routines
+       new.tmat,
+       tmatmul,
+       tcols,
+       trows,
+       is.tmat)
+
+S3method("clone", ssa)
+S3method("decompose", ssa)
+S3method("decompose", "1d-ssa.svd")
+S3method("decompose", "1d-ssa.eigen")
+S3method("decompose", "1d-ssa.propack")
+S3method("decompose", "1d-ssa.nutrlan")
+S3method("decompose", "2d-ssa")
+S3method("decompose", "2d-ssa.propack")
+S3method("decompose", "2d-ssa.nutrlan")
+S3method("decompose", "toeplitz-ssa.svd")
+S3method("decompose", "toeplitz-ssa.eigen")
+S3method("decompose", "toeplitz-ssa.propack")
+S3method("decompose", "toeplitz-ssa.nutrlan")
+S3method("reconstruct", ssa)
+S3method("calc.v", ssa)
+S3method("calc.v", "1d-ssa.nutrlan")
+S3method("calc.v", "1d-ssa.propack")
+S3method("calc.v", "1d-ssa.svd")
+S3method("calc.v", "1d-ssa.eigen")
+S3method("calc.v", "2d-ssa")
+S3method("nu", ssa)
+S3method("nv", ssa)
+S3method("nlambda", ssa)
+S3method("precache", ssa)
+S3method("cleanup", ssa)
+S3method("$", ssa)
+S3method("print", ssa)
+S3method("summary", ssa)
+S3method("plot", ssa)
+S3method("wcor", ssa)
+S3method("wcor", "1d-ssa")
+S3method("wcor", "toeplitz-ssa")
+S3method("plot", wcor.matrix)
+S3method("clusterify", wcor.matrix)
+S3method("clusterify", ssa)
