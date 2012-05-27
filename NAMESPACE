@@ -17,6 +17,7 @@ export(clone,
        clusterify,
        wcor,
        wcor.default,
+       hmatr,
 # Hankel matrix' routines
        new.hmat,
        hmatmul,
@@ -37,7 +38,12 @@ export(clone,
        trows,
        is.tmat,
 # Forecast stuff
-       rforecast)
+       basis2lrf,
+       lrf,
+       roots,
+       rforecast,
+       vforecast,
+       bforecast)
 
 S3method("clone", ssa)
 S3method("decompose", ssa)
@@ -68,10 +74,21 @@ S3method("$", ssa)
 S3method("print", ssa)
 S3method("summary", ssa)
 S3method("plot", ssa)
+S3method("plot", "1d-ssa.reconstruction")
 S3method("wcor", ssa)
 S3method("wcor", "1d-ssa")
 S3method("wcor", "toeplitz-ssa")
 S3method("plot", wcor.matrix)
 S3method("clusterify", wcor.matrix)
 S3method("clusterify", ssa)
+S3method("lrf", "1d-ssa")
+S3method("lrf", "toeplitz-ssa")
 S3method("rforecast", "1d-ssa")
+S3method("rforecast", "toeplitz-ssa")
+S3method("vforecast", "1d-ssa")
+S3method("vforecast", "toeplitz-ssa")
+S3method("roots", "lrf")
+S3method("plot", "lrf")
+S3method("plot", "hmatr")
+S3method("bforecast", "1d-ssa")
+S3method("bforecast", "toeplitz-ssa")
