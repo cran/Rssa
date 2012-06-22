@@ -1,20 +1,20 @@
 #   R package for Singular Spectrum Analysis
 #   Copyright (c) 2008 Anton Korobeynikov <asl@math.spbu.ru>
-#   
-#   This program is free software; you can redistribute it 
-#   and/or modify it under the terms of the GNU General Public 
-#   License as published by the Free Software Foundation; 
-#   either version 2 of the License, or (at your option) 
+#
+#   This program is free software; you can redistribute it
+#   and/or modify it under the terms of the GNU General Public
+#   License as published by the Free Software Foundation;
+#   either version 2 of the License, or (at your option)
 #   any later version.
 #
-#   This program is distributed in the hope that it will be 
-#   useful, but WITHOUT ANY WARRANTY; without even the implied 
-#   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
+#   This program is distributed in the hope that it will be
+#   useful, but WITHOUT ANY WARRANTY; without even the implied
+#   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 #   PURPOSE.  See the GNU General Public License for more details.
-#   
-#   You should have received a copy of the GNU General Public 
-#   License along with this program; if not, write to the 
-#   Free Software Foundation, Inc., 675 Mass Ave, Cambridge, 
+#
+#   You should have received a copy of the GNU General Public
+#   License along with this program; if not, write to the
+#   Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
 #   MA 02139, USA.
 
 
@@ -53,8 +53,9 @@ panel.eigenvectors <- function(x, y, ssaobj, ...) {
   dots <- .defaults(dots, "scales", list(y = list(log = TRUE)));
   dots <- .defaults(dots, "pch", 20);
 
-  do.call("xyplot",
-          c(list(x = B ~ A , data = d, ssaobj = this), dots));
+  res <- do.call("xyplot",
+                 c(list(x = B ~ A , data = d, ssaobj = this), dots));
+  print(res)
 }
 
 .plot.ssa.vectors <- function(this, ..., plot.contrib, idx) {
@@ -76,13 +77,14 @@ panel.eigenvectors <- function(x, y, ssaobj, ...) {
   dots <- .defaults(dots, "as.table", TRUE);
   dots <- .defaults(dots, "scales", list(relation = "free"));
 
-  do.call("xyplot",
-          c(list(x = A ~ B | factor(A,
-                                    labels = if (!plot.contrib) A else paste(A, " (", lambda, "%)", sep = "")),
-                 data = d, ssaobj = this,
-                 panel = panel.eigenvectors,
-                 prepanel = prepanel.eigenvectors),
-            dots));
+  res <- do.call("xyplot",
+                 c(list(x = A ~ B | factor(A,
+                                           labels = if (!plot.contrib) A else paste(A, " (", lambda, "%)", sep = "")),
+                        data = d, ssaobj = this,
+                        panel = panel.eigenvectors,
+                        prepanel = prepanel.eigenvectors),
+                   dots));
+  print(res)
 }
 
 .plot.ssa.paired <- function(this, ..., plot.contrib, idx, idy) {
@@ -105,14 +107,15 @@ panel.eigenvectors <- function(x, y, ssaobj, ...) {
   dots <- .defaults(dots, "as.table", TRUE);
   dots <- .defaults(dots, "scales", list(relation = "free"));
 
-  do.call("xyplot",
-          c(list(x = A ~ B | factor(A,
-                                    labels = if (!plot.contrib) paste(A, "vs", B)
-                                             else paste(A, " (", lambdax, "%) vs ", B, " (", lambday, "%)", sep = "")),
-                 data = d, ssaobj = this,
-                 panel = panel.eigenvectors,
-                 prepanel = prepanel.eigenvectors),
-            dots));
+  res <- do.call("xyplot",
+                 c(list(x = A ~ B | factor(A,
+                                           labels = if (!plot.contrib) paste(A, "vs", B)
+                                                    else paste(A, " (", lambdax, "%) vs ", B, " (", lambday, "%)", sep = "")),
+                        data = d, ssaobj = this,
+                        panel = panel.eigenvectors,
+                        prepanel = prepanel.eigenvectors),
+                   dots));
+  print(res)
 }
 
 prepanel.series <- function(x, y, recon, ...) {
@@ -148,13 +151,13 @@ panel.series <- function(x, y, recon, ...) {
   dots <- .defaults(dots, "as.table", TRUE);
   dots <- .defaults(dots, "scales", list(relation = "free"));
 
-  do.call("xyplot",
-          c(list(x = A ~ B | factor(A, labels = paste(groups)),
-                 data = d, recon = r,
-                 panel = panel.series,
-                 prepanel = prepanel.series),
-            dots));
-
+  res <- do.call("xyplot",
+                 c(list(x = A ~ B | factor(A, labels = paste(groups)),
+                        data = d, recon = r,
+                        panel = panel.series,
+                        prepanel = prepanel.series),
+                   dots));
+  print(res);
 }
 
 plot.ssa <- function(x,
@@ -168,7 +171,7 @@ plot.ssa <- function(x,
                      groups) {
   type <- match.arg(type);
   this <- x;
- 
+
   if (identical(type, "values")) {
     .plot.ssa.values(this, ..., numvalues = numvalues);
   } else if (identical(type, "vectors")) {
@@ -190,9 +193,21 @@ plot.ssa <- function(x,
 
 "plot.1d-ssa.reconstruction" <- function(x, ...,
                                          type = c("raw", "cumsum"),
-                                         plot.method = c("matplot", "native")) {
+                                         plot.method = c("matplot", "native"),
+                                         base.series = NULL,
+                                         add.original = FALSE,
+                                         add.residuals = FALSE) {
   type <- match.arg(type);
   plot.method <- match.arg(plot.method)
+  original <- attr(x, "series")
+  res <- attr(x, "residuals")
+
+  # Handle base series, if any
+  if (!is.null(base.series)) {
+    stopifnot(inherits(base.series, "ssa.reconstruction"))
+    m0 <- matrix(unlist(base.series), ncol = length(base.series))
+    original <- attr(base.series, "series")
+  }
 
   # Nifty defaults
   dots <- list(...)
@@ -202,6 +217,7 @@ plot.ssa <- function(x,
 
   # Prepare the matrix with all the data
   m <- matrix(unlist(x), ncol = length(x))
+  if (!is.null(base.series)) m <- cbind(m0, m)
 
   # Transform the matrix, if necessary
   if (identical(type, "cumsum"))
@@ -209,6 +225,17 @@ plot.ssa <- function(x,
 
   # Merge the attributes in
   attributes(m) <- append(attributes(m), attributes(x[[1]]))
+
+  mnames <- paste("Reconstructed", 1:ncol(m))
+  if (add.original) {
+    m <- cbind(original, m)
+    mnames <- c("Original", mnames)
+  }
+  if (add.residuals) {
+    m <- cbind(m, res)
+    mnames <- c(mnames, "Residuals")
+  }
+  colnames(m) <- mnames
 
   # Plot'em'all!
   if (identical(plot.method, "matplot"))
@@ -218,3 +245,5 @@ plot.ssa <- function(x,
   else
     stop("Unknown plot method")
 }
+
+"plot.toeplitz-ssa.reconstruction" <- `plot.1d-ssa.reconstruction`

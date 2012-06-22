@@ -17,13 +17,38 @@
 #   Free Software Foundation, Inc., 675 Mass Ave, Cambridge, 
 #   MA 02139, USA.
 
+fix.svd.method <- function(svd.method, L, N, ...) {
+  dots <- list(...)
+  neig <- dots$neig
+  truncated <- (identical(svd.method, "nutrlan") || identical(svd.method, "propack"))
+
+  if (is.null(neig)) neig <- min(50, L, N - L + 1)
+  if (truncated) {
+    # It's not wise to call truncated methods for small matrices at all
+    if (L < 50) {
+      truncated <- FALSE
+      svd.method <- "eigen"
+    } else if (neig > L /2) {
+    # Check, whether desired eigentriples amount is too huge
+      if (L < 200) {
+        svd.method <- "eigen"
+        truncated <- FALSE
+      } else {
+        warning("too many eigentriples requested")
+      }
+    }
+  }
+
+  svd.method
+}
+
 new.ssa <- function(x,
                     L = (N - 1) %/% 2,
                     ...,
                     kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa"),
-                    svd_method = c("nutrlan", "propack", "svd", "eigen"),
+                    svd.method = c("nutrlan", "propack", "svd", "eigen"),
                     force.decompose = TRUE) {
-  svd_method <- match.arg(svd_method);
+  svd.method <- match.arg(svd.method);
   kind <- match.arg(kind);
   xattr <- attributes(x);
 
@@ -35,10 +60,7 @@ new.ssa <- function(x,
     N <- length(x);
 
     # Fix svd method, if needed
-    if ((identical(svd_method, "nutrlan") ||
-         identical(svd_method, "propack")) &&
-        L < 50)
-      svd_method <- "eigen";
+    svd.method <- fix.svd.method(svd.method, L, N, ...)
   } else if (identical(kind, "2d-ssa")) {
     # Coerce input to matrix if necessary
     if (!is.matrix(x))
@@ -53,7 +75,7 @@ new.ssa <- function(x,
                call = match.call(),
                kind = kind,
                series = deparse(substitute(x)),
-               svd_method = svd_method);
+               svd.method = svd.method);
 
   # Create data storage
   this <- .create.storage(this);
@@ -65,7 +87,7 @@ new.ssa <- function(x,
   .set(this, "Fattr", xattr);
   
   # Make this S3 object
-  class(this) <- c(paste(kind, svd_method, sep = "."), kind, "ssa");
+  class(this) <- c(paste(kind, svd.method, sep = "."), kind, "ssa");
 
   # Decompose, if necessary
   if (force.decompose)
@@ -126,7 +148,8 @@ reconstruct.ssa <- function(this, groups, ..., cache = TRUE) {
   # pass space to store some data which is needed to be calculated only once.
   e <- new.env();
 
-  # Do actual reconstruction
+  # Do actual reconstruction. Calculate the residuals on the way
+  residuals <- this$F
   for (i in seq_along(groups)) {
     group <- groups[[i]];
     new <- setdiff(group, info);
@@ -147,9 +170,15 @@ reconstruct.ssa <- function(this, groups, ..., cache = TRUE) {
     # Add pre-cached series
     out[[i]] <- out[[i]] + .get.series(this, cached);
 
+    # Calculate the residuals
+    residuals <- residuals - out[[i]]
+
     # Propagate attributes (e.g. dimension for 2d-SSA)
     attributes(out[[i]]) <- .get(this, "Fattr");
   }
+
+  # Propagate attributes of residuals
+  attributes(residuals) <- .get(this, "Fattr");
 
   # Cleanup
   rm(list = ls(envir = e, all.names = TRUE),
@@ -157,10 +186,22 @@ reconstruct.ssa <- function(this, groups, ..., cache = TRUE) {
   gc(verbose = FALSE);
 
   names(out) <- paste("F", 1:length(groups), sep="");
+  attr(out, "residuals") <- residuals;
+  attr(out, "series") <- this$F;
 
   # Reconstructed series can be pretty huge...
-  class(out) <- paste(this$kind, "reconstruction", sep = ".")
+  class(out) <- paste(c(this$kind, "ssa"), "reconstruction", sep = ".")
   invisible(out);
+}
+
+residuals.ssa <- function(object, groups, ..., cache = TRUE) {
+  groups <- list(if (missing(groups)) 1:min(nlambda(object), nu(object)) else unlist(groups))
+
+  residuals(reconstruct(object, groups = groups, ..., cache = cache))
+}
+
+residuals.ssa.reconstruction <- function(object, ...) {
+  attr(object, "residuals")
 }
 
 .do.reconstruct <- function(this, idx, env = .GlobalEnv) {
@@ -200,8 +241,8 @@ nlambda.ssa <- function(this, ...) {
   ifelse(.exists(this, "lambda"), length(.get(this, "lambda")), 0);
 }
 
-clone.ssa <- function(this, copy.cache = TRUE, ...) {
-  obj <- .clone(this);
+clone.ssa <- function(this, copy.storage = TRUE, copy.cache = TRUE, ...) {
+  obj <- .clone(this, copy.storage = copy.storage);
   if (copy.cache == FALSE)
     cleanup(obj);
 
@@ -253,14 +294,14 @@ print.ssa <- function(x, digits = max(3, getOption("digits") - 3), ...) {
   cat("\nCall:\n", deparse(x$call), "\n\n", sep="");
   cat("Series length:", paste(x$length, collapse = " x "));
   cat(",\tWindow length:", paste(x$window, collapse = " x "));
-  cat(",\tSVD method:", x$svd_method);
+  cat(",\tSVD method:", x$svd.method);
   cat("\n\nComputed:\n");
   cat("Eigenvalues:", nlambda(x));
   cat(",\tEigenvectors:", nu(x));
   cat(",\tFactor vectors:", nv(x));
   cat("\n\nPrecached:",
       length(.get.series.info(x)),
-      "subseries (")
+      "elementary series (")
   cat(format(.object.size(x, pat = "series:") / 1024 / 1024, digits = digits),
       "MiB)");
   cat("\n\nOverall memory consumption (estimate):",

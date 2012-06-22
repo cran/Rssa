@@ -11,7 +11,7 @@ new.ssa(x,
         L = (N - 1) \%/\% 2,
         \dots,
         kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa"),
-        svd_method = c("nutrlan", "propack", "svd", "eigen"),
+        svd.method = c("nutrlan", "propack", "svd", "eigen"),
         force.decompose = TRUE)
 }
 
@@ -24,7 +24,7 @@ new.ssa(x,
     \code{\link[Rssa:decompose.ssa]{decompose}} (e.g. \code{neig}).}
   \item{kind}{SSA method. This includes ordinary 1d SSA, 2d SSA and
     toeplitz variant of 1d SSA.}
-  \item{svd_method}{singular value decomposition method. See 'Details'
+  \item{svd.method}{singular value decomposition method. See 'Details'
     for more info.}
   \item{force.decompose}{logical, if 'TRUE' then the decomposition is
     performed before return.}
@@ -57,7 +57,7 @@ new.ssa(x,
   The main step of the SSA method is the singular decomposition of the
   so-called series trajectory matrix. Package provides several
   implementations of this procedure (corresponds to different values of
-  \code{svd_method}) argument:
+  \code{svd.method}) argument:
   \describe{
     \item{nutrlan}{Thick-restart Lanczos eigensolver which operates on
       cross-product matrix. This methods exploits the Hankel structure of
@@ -114,6 +114,6 @@ new.ssa(x,
 \examples{
 # Decompose 'co2' series with default parameters
 s <- new.ssa(co2)
-# Reconstruct the series, grouping elementary subseries 2, 3 and 4, 5.
+# Reconstruct the series, grouping elementary series 2, 3 and 4, 5.
 r <- reconstruct(s, groups = list(1, c(2,3), c(4,5)))
 }

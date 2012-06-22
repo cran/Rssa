@@ -18,10 +18,23 @@
 #   Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
 #   MA 02139, USA.
 
-basis2lrf <- function(U, eps = sqrt(.Machine$double.eps)) {
+check.for.groups <- function(use.group = TRUE) {
+  # R magic to extract the call to parent function
+  call <- as.list(match.call(definition = sys.function(-1),
+                             call = sys.call(sys.parent())))
+  if (use.group) {
+    if (!is.null(call[["groups"]]))
+      stop("`groups' found in the arguments, however function expect `group'")
+  } else {
+    if (!is.null(call[["group"]]))
+      warning("`group' found in the arguments, however function expect `groups'")
+  }
+}
+
+basis2lrr <- function(U, eps = sqrt(.Machine$double.eps)) {
   N <- nrow(U);
   lpf <- U %*% t(U[N, , drop = FALSE]);
-  
+
   divider <- 1 - lpf[N]
   if (divider < eps)
     stop("Verticality coefficient equals to 1");
@@ -29,9 +42,11 @@ basis2lrf <- function(U, eps = sqrt(.Machine$double.eps)) {
   lpf[-N] / divider
 }
 
-"lrf.1d-ssa" <- function(this, group, ...) {
+"lrr.1d-ssa" <- function(this, group, ...) {
   if (missing(group))
     group <- 1:min(nlambda(this), nu(this))
+
+  check.for.groups(use.group = TRUE)
 
   # Determine the upper bound of desired eigentriples
   desired <- max(group)
@@ -42,17 +57,34 @@ basis2lrf <- function(U, eps = sqrt(.Machine$double.eps)) {
 
   U <- .get(this, "U")[, group, drop = FALSE]
 
-  res <- basis2lrf(U)
-  class(res) <- "lrf"
+  res <- basis2lrr(U)
+  class(res) <- "lrr"
 
   res
 }
 
-roots.lrf <- function(x) {
-  polyroot(c(-x, 1))
+companion.matrix.lrr <- function(x) {
+  n <- length(x)
+  res <- matrix(0, n, n)
+  res[, n] <- x
+  res[seq(from = 2, by = n + 1, length.out = n - 1)] <- 1
+  res
 }
 
-plot.lrf <- function(x, ..., raw = FALSE) {
+roots.lrr <- function(x, ..., method = c("companion", "polyroot")) {
+  method <- match.arg(method)
+
+  res <-
+    if (identical(method, "polyroot")) {
+      polyroot(c(-x, 1))
+    } else {
+      eigen(companion.matrix.lrr(x), only.values = TRUE)$values
+    }
+
+  res[order(abs(res), decreasing = TRUE)]
+}
+
+plot.lrr <- function(x, ..., raw = FALSE) {
   r <- roots(x)
   if (raw) {
     plot(r, ...)
@@ -65,33 +97,36 @@ plot.lrf <- function(x, ..., raw = FALSE) {
          main = "Roots of Linear Recurrence Formula",
          xlab = "Real Part",
          ylab = "Imaginary Part",
-         asl = 1)
+         asp = 1)
     symbols(0, 0, circles = 1, add = TRUE, inches = FALSE)
   }
 }
 
-apply.lrf <- function(F, lrf, len = 1, only.new = FALSE) {
+apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
   N <- length(F)
-  r <- length(lrf)
+  r <- length(lrr)
 
   # Sanity check of inputs
   if (r > N)
-    stop("Wrong length of LRF")
+    stop("Wrong length of LRR")
 
-  # Run the actual LRF
+  # Run the actual LRR
   F <- c(F, rep(NA, len))
   for (i in 1:len)
-    F[N+i] <- sum(F[(N+i-r) : (N+i-1)]*lrf)
+    F[N+i] <- sum(F[(N+i-r) : (N+i-1)]*lrr)
 
   if (only.new) F[(N+1):(N+len)] else F
 }
 
 "rforecast.1d-ssa" <- function(this, groups, len = 1,
                                base = c("reconstructed", "original"),
+                               only.new = TRUE,
                                ..., cache = TRUE) {
   base <- match.arg(base)
   if (missing(groups))
     groups <- as.list(1:min(nlambda(this), nu(this)))
+
+  check.for.groups(use.group = FALSE)
 
   # Determine the upper bound of desired eigentriples
   desired <- max(unlist(groups));
@@ -108,12 +143,12 @@ apply.lrf <- function(F, lrf, len = 1, only.new = FALSE) {
   for (i in seq_along(groups)) {
     group <- groups[[i]]
 
-    # Calculate the LRF corresponding to group
-    lf <- lrf(this, group)
+    # Calculate the LRR corresponding to group
+    lf <- lrr(this, group)
 
     # Calculate the forecasted values
-    out[[i]] <- apply.lrf(if (identical(base, "reconstructed")) r[[i]] else .get(this, "F"),
-                          lf, len)
+    out[[i]] <- apply.lrr(if (identical(base, "reconstructed")) r[[i]] else .get(this, "F"),
+                          lf, len, only.new = only.new)
     # FIXME: try to fixup the attributes
   }
 
@@ -124,6 +159,7 @@ apply.lrf <- function(F, lrf, len = 1, only.new = FALSE) {
 }
 
 "vforecast.1d-ssa" <- function(this, groups, len = 1,
+                               only.new = TRUE,
                                ...) {
   L <- this$window
   K <- this$length - L + 1
@@ -132,6 +168,8 @@ apply.lrf <- function(F, lrf, len = 1, only.new = FALSE) {
 
   if (missing(groups))
     groups <- as.list(1:min(nlambda(this), nu(this)))
+
+  check.for.groups(use.group = FALSE)
 
   # Determine the upper bound of desired eigentriples
   desired <- max(unlist(groups))
@@ -172,7 +210,7 @@ apply.lrf <- function(F, lrf, len = 1, only.new = FALSE) {
       res <- res + .hankelize.one.hankel(Uet[ , j], Z[ , j], h)
     }
 
-    out[[i]] <- res[1:N.res]
+    out[[i]] <- res[(if (only.new) (K+L):N.res else 1:N.res)]
     # FIXME: try to fixup the attributes
   }
 
@@ -184,55 +222,110 @@ apply.lrf <- function(F, lrf, len = 1, only.new = FALSE) {
 
 "bforecast.1d-ssa" <- function(this, group,
                                len = 1, R = 100, level = 0.95,
+                               type = c("recurrent", "vector"),
                                ...,
                                cache = TRUE) {
+  type <- match.arg(type)
+  check.for.groups(use.group = TRUE)
+  dots <- list(...)
+
   # First, perform the reconstruction and calculate the residuals.
   r <- reconstruct(this, groups = list(group), ..., cache = cache)
   stopifnot(length(r) == 1)
-  residuals <- this$F - r[[1]]
+  res <- residuals(r)
 
-  # Get the LRF, corresponding to group
-  lf <- lrf(this, group)
+  forecast.fun <- if (identical(type, "recurrent")) rforecast else vforecast
+  boot.forecast <- function(F, base) {
+    s <- clone(base, copy.cache = FALSE, copy.storage = FALSE)
+    .set(s, "F", F)
+    .set(s, "Fattr", attributes(F))
+    do.call(forecast.fun,
+            c(list(s,
+                   groups = list(group), len = len, only.new = TRUE),
+              dots))[[1]]
+  }
 
   # Do the actual bootstrap forecast
-  bF <- replicate(R, apply.lrf(r[[1]] + sample(residuals, replace = TRUE),
-                               lf, len = len, only.new = TRUE))
+  bF <- matrix(nrow = len, ncol = R)
+  bF[] <- replicate(R,
+                    boot.forecast(r[[1]] + sample(res, replace = TRUE), this))
 
   # Finally, calculate the statistics of interest
   cf <- apply(bF, 1, quantile, probs = c((1-level) / 2, (1 + level) / 2))
   cbind(Value = rowMeans(bF), t(cf))
 }
 
-"lrf.toeplitz-ssa" <- `lrf.1d-ssa`;
+"sforecast.1d-ssa" <- function(this, group,
+                               len = 1,
+                               ...,
+                               cache = TRUE) {
+  check.for.groups(use.group = TRUE)
+
+  # First, perform the reconstruction.
+  r <- reconstruct(this, groups = list(group), ..., cache = cache)
+  stopifnot(length(r) == 1)
+  r <- r[[1]]
+
+  # Calculate the LRR
+  lf <- lrr(this, group)
+
+  # Now calculate the recurrent forecast on sliding part of the series
+  N <- this$length
+  L <- this$window
+  K <- N - L + 1
+  K.l <- K - len
+
+  if (N < L + len)
+    stop("too large `len' for sliding forecast")
+
+  res <- numeric(K.l)
+  for (i in 1:K.l)
+    res[i] <- apply.lrr(r[i:(i+L)], lf, len = len, only.new = TRUE)[len]
+
+  res
+}
+
+"lrr.toeplitz-ssa" <- `lrr.1d-ssa`;
 "vforecast.toeplitz-ssa" <- `vforecast.1d-ssa`;
 "rforecast.toeplitz-ssa" <- `rforecast.1d-ssa`;
 "bforecast.toeplitz-ssa" <- `bforecast.1d-ssa`;
+"sforecast.toeplitz-ssa" <- `sforecast.1d-ssa`;
 
 rforecast.ssa <- function(x, groups, len = 1,
                           base = c("reconstructed", "original"),
+                          only.new = TRUE,
                           ..., cache = TRUE) {
   stop("generic recurrent forecast not implemented yet!")
 }
 
 bforecast.ssa <- function(x, group,
                           len = 1, R = 100, level = 0.95,
+                          type = c("recurrent", "vector"),
                           ...,
                           cache = TRUE) {
   stop("generic bootstrapped forecast not implemented yet!")
 }
 
-lrf.ssa <- function(x, group) {
-  stop("generic LRF calculation not implemented yet!")
+lrr.ssa <- function(x, group) {
+  stop("generic LRR calculation not implemented yet!")
 }
 
 vforecast.ssa <- function(x, groups, len = 1,
+                          only.new = TRUE,
                           ...) {
   stop("generic vector forecast not implemented yet!")
 }
 
-lrf <- function(this, ...)
-  UseMethod("lrf")
-roots <- function(x)
+sforecast.ssa <- function(x, group, len = 1,
+                          ...,
+                          cache = TRUE) {
+  stop("generic sliding forecast not implemented yet!")
+}
+
+
+lrr <- function(this, ...)
+  UseMethod("lrr")
+roots <- function(x, ...)
   UseMethod("roots")
 rforecast <- function(this, ...)
   UseMethod("rforecast")
@@ -240,3 +333,5 @@ vforecast <- function(this, ...)
   UseMethod("vforecast")
 bforecast <- function(this, ...)
   UseMethod("bforecast")
+sforecast <- function(this, ...)
+  UseMethod("sforecast")
