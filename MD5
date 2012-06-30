@@ -1,5 +1,5 @@
-9501ca307353bb7d12441bfd1a274d24 *DESCRIPTION
-542eaa9de495a94468c9c1069a61f396 *NAMESPACE
+d460c9e73271e6b679ed7e475d0d73e9 *DESCRIPTION
+b2b4733ae7f8e168fd072a1ea7443b1b *NAMESPACE
 cbce6390f6123aca78be67842dadb860 *R/common.R
 ef12e96ca547b91c7df4343f43df5dcf *R/forecast.R
 f31042c300adcc51db8f4e0f7f20f8e0 *R/hankel.R
@@ -7,9 +7,9 @@ f31042c300adcc51db8f4e0f7f20f8e0 *R/hankel.R
 2330d3662cf84a8443b4bee199e42c1e *R/hmatr.R
 4f7727b9ce1e982b19237535b16b67ff *R/init.R
 4cbb49d54ef6ae60eb16cb0cbc91131c *R/init.R.in
-87e6bc93f960f066e1179dd64f8c7568 *R/perest.R
+0f5a82bba72dec62a2ddb1c53f7d7634 *R/parest.R
 54ee0ba4832d24d3a11279e2a0f94e20 *R/plot.R
-2a3bb2ba9874b4e8e9c06512d6a2663a *R/ssa.R
+4738938303783b7e7e03cf404a0b85d2 *R/ssa.R
 0d7677f7d072356fcdab293d3a45f1e3 *R/toeplitz.R
 c2d1fab7d9a61dd4c72f6debcaeebceb *R/wcor.R
 9c1acf12ff7fbc9dc6b625f40522813f *ToDo.txt
@@ -32,8 +32,8 @@ a4abae4c8129d042d302f9e97aca4074 *man/hbhankel.Rd
 476db64fc1243d493cf043afc29f46be *man/hmatr.Rd
 3c47d77814a2431a8307c952e68f7e69 *man/lrr-routines.Rd
 5557f105a4f05a7d4b67840801409688 *man/lrr.Rd
-73d4b779ec39ca7c02f43eac0bf20c02 *man/new.Rd
-f2d9dc1fbec40d9333d17327b72374d4 *man/perest.Rd
+57d275ee51abdc078590026572df26e5 *man/new.Rd
+08e80ad1e36deefc652b9732189adb43 *man/parest.Rd
 3c6c3da7e218b4ff0e1a12cb725f0967 *man/plot.Rd
 d27edf648a4d29816d9dc2d72f888e11 *man/precache.Rd
 5c5d69023bac52172b8f86134eae28e1 *man/reconstruct.Rd
