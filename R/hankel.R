@@ -1,20 +1,20 @@
 #   R package for Singular Spectrum Analysis
 #   Copyright (c) 2009 Anton Korobeynikov <asl@math.spbu.ru>
-#   
-#   This program is free software; you can redistribute it 
-#   and/or modify it under the terms of the GNU General Public 
-#   License as published by the Free Software Foundation; 
-#   either version 2 of the License, or (at your option) 
+#
+#   This program is free software; you can redistribute it
+#   and/or modify it under the terms of the GNU General Public
+#   License as published by the Free Software Foundation;
+#   either version 2 of the License, or (at your option)
 #   any later version.
 #
-#   This program is distributed in the hope that it will be 
-#   useful, but WITHOUT ANY WARRANTY; without even the implied 
-#   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
+#   This program is distributed in the hope that it will be
+#   useful, but WITHOUT ANY WARRANTY; without even the implied
+#   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 #   PURPOSE.  See the GNU General Public License for more details.
-#   
-#   You should have received a copy of the GNU General Public 
-#   License along with this program; if not, write to the 
-#   Free Software Foundation, Inc., 675 Mass Ave, Cambridge, 
+#
+#   You should have received a copy of the GNU General Public
+#   License along with this program; if not, write to the
+#   Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
 #   MA 02139, USA.
 
 #   Routines for normal hankel SSA
@@ -51,24 +51,10 @@ hankel <- function(X, L) {
   outer(1:L, 1:K, function(x,y) X[x+y-1]);
 }
 
-.hankelize.one.ssa <- function(x, U, V) {
+.hankelize.one.1d.ssa <- function(x, U, V) {
+  fft.plan <- .get(x, "fft.plan")
   storage.mode(U) <- storage.mode(V) <- "double";
-  .Call("hankelize_one", U, V);
-}
-
-.hankelize.one.hankel <- function(U, V, h) {
-  storage.mode(U) <- storage.mode(V) <- "double";
-  .Call("hankelize_one_fft", U, V, h);
-}
-
-.hankelize.one.ssa.propack <- function(x, U, V) {
-  h <- .get(x, "hmat");
-  .hankelize.one.hankel(U, V, h);
-}
-
-.hankelize.one.ssa.nutrlan <- function(x, U, V) {
-  h <- .get(x, "hmat");
-  .hankelize.one.hankel(U, V, h);
+  .Call("hankelize_one_fft", U, V, fft.plan);
 }
 
 .hankelize.multi <- function(U, V) {
@@ -76,12 +62,23 @@ hankel <- function(X, L) {
   .Call("hankelize_multi", U, V);
 }
 
+.hankelize.multi.hankel <- function(U, V, fft.plan) {
+  storage.mode(U) <- storage.mode(V) <- "double";
+  .Call("hankelize_multi_fft", U, V, fft.plan);
+}
+
+fft.plan.1d <- function(N) {
+  storage.mode(N) <- "integer"
+  .Call("initialize_fft_plan", N)
+}
+
 new.hmat <- function(F,
-                     L = (N - 1) %/% 2) {
-  N <- length(F);
-  storage.mode(F) <- "double";
-  storage.mode(L) <- "integer";
-  h <- .Call("initialize_hmat", F, L);
+                     L = (N - 1) %/% 2,
+                     fft.plan = NULL) {
+  N <- length(F)
+  storage.mode(F) <- "double"
+  storage.mode(L) <- "integer"
+  h <- .Call("initialize_hmat", F, L, if (is.null(fft.plan)) fft.plan.1d(N) else fft.plan)
 }
 
 hcols <- function(h) {
@@ -100,6 +97,13 @@ hmatmul <- function(hmat, v, transposed = FALSE) {
   storage.mode(v) <- "double";
   storage.mode(transposed) <- "logical";
   .Call("hmatmul", hmat, v, transposed);
+}
+
+.init.1d.ssa <- function(x, ...) {
+  # Initialize FFT plan
+  .set(x, "fft.plan", fft.plan.1d(x$length))
+
+  x
 }
 
 decompose.1d.ssa <- function(x,
@@ -122,12 +126,18 @@ decompose.1d.ssa.svd <- function(x,
 
   # Build hankel matrix
   F <- .get(x, "F");
+  hmat <- .get(x, "hmat", allow.null = TRUE);
+  if (is.null(hmat)) {
+    fft.plan <- .get(x, "fft.plan")
+    hmat <- new.hmat(F, fft.plan = fft.plan, L = L)
+  }
   h <- hankel(F, L = L);
 
   # Do decomposition
   S <- svd(h, nu = neig, nv = neig);
 
   # Save results
+  .set(x, "hmat", hmat);
   .set(x, "lambda", S$d);
   if (!is.null(S$u))
     .set(x, "U", S$u);
@@ -137,25 +147,40 @@ decompose.1d.ssa.svd <- function(x,
   x;
 }
 
+Lcov.matrix <- function(F,
+                        L = (N - 1) %/% 2,
+                        fft.plan = NULL) {
+  N <- length(F);
+  storage.mode(F) <- "double";
+  storage.mode(L) <- "integer";
+  .Call("Lcov_matrix", F, L, if (is.null(fft.plan)) fft.plan.1d(N) else fft.plan);
+}
+
 decompose.1d.ssa.eigen <- function(x, ...,
                                    force.continue = FALSE) {
   N <- x$length; L <- x$window; K <- N - L + 1;
 
   # Check, whether continuation of decomposition is requested
   if (!force.continue && nlambda(x) > 0)
-    stop("Continuation of decompostion is not supported for this method.")
+    stop("Continuation of decomposition is not supported for this method.")
 
-  # Build hankel matrix (this can be done more efficiently!)
+  # Build hankel matrix
   F <- .get(x, "F");
-  h <- hankel(F, L = L);
+  fft.plan <- .get(x, "fft.plan")
+
+  hmat <- .get(x, "hmat", allow.null = TRUE);
+  if (is.null(hmat)) {
+    hmat <- new.hmat(F, fft.plan = fft.plan, L = L)
+  }
 
   # Do decomposition
-  S <- eigen(tcrossprod(h));
+  S <- eigen(Lcov.matrix(F, L = L, fft.plan = fft.plan), symmetric = TRUE);
 
   # Fix small negative values
   S$values[S$values < 0] <- 0;
 
   # Save results
+  .set(x, "hmat", hmat);
   .set(x, "lambda", sqrt(S$values));
   .set(x, "U", S$vectors);
 
@@ -173,8 +198,11 @@ decompose.1d.ssa.propack <- function(x,
     stop("Continuation of decompostion is not yet implemented for this method.")
 
   F <- .get(x, "F");
-  h <- new.hmat(F, L = L);
-
+  h <- .get(x, "hmat", allow.null = TRUE);
+  if (is.null(h)) {
+    fft.plan <- .get(x, "fft.plan")
+    h <- new.hmat(F, fft.plan = fft.plan, L = L)
+  }
   S <- propack.svd(h, neig = neig, ...);
 
   # Save results
@@ -195,8 +223,9 @@ decompose.1d.ssa.nutrlan <- function(x,
 
   h <- .get(x, "hmat", allow.null = TRUE);
   if (is.null(h)) {
-    F <- .get(x, "F");
-    h <- new.hmat(F, L = L);
+    F <- .get(x, "F")
+    fft.plan <- .get(x, "fft.plan")
+    h <- new.hmat(F, fft.plan = fft.plan, L = L)
   }
 
   lambda <- .get(x, "lambda", allow.null = TRUE);
@@ -214,7 +243,7 @@ decompose.1d.ssa.nutrlan <- function(x,
   x;
 }
 
-.calc.v.hankel <- function(x, idx) {
+calc.v.1d.ssa <- function(x, idx, env = .GlobalEnv, ...) {
   lambda <- .get(x, "lambda")[idx];
   U <- .get(x, "U")[, idx, drop = FALSE];
   h <- .get(x, "hmat");
@@ -222,39 +251,6 @@ decompose.1d.ssa.nutrlan <- function(x,
   invisible(sapply(1:length(idx),
                    function(i) hmatmul(h, U[, i], transposed = TRUE) / lambda[i]));
 }
-
-.calc.v.svd <- function(x, idx, env) {
-  # Check, if there is garbage-collected storage to hold some pre-calculated
-  # stuff.
-  if (identical(env, .GlobalEnv) ||
-      !exists(".ssa.temporary.storage", envir = env, inherits = FALSE)) {
-    F <- .get(x, "F");
-
-    # Build hankel matrix.
-    X <- hankel(F, L = x$window);
-
-    # Save to later use, if possible.
-    if (!identical(env, .GlobalEnv)) {
-      assign(".ssa.temporary.storage", X, envir = env, inherits = FALSE);
-    }
-  } else {
-    X <- get(".ssa.temporary.storage", envir = env, inherits = FALSE);
-  }
-
-  lambda <- .get(x, "lambda")[idx];
-  U <- .get(x, "U")[, idx, drop = FALSE];
-
-  invisible(sapply(1:length(idx),
-                   function(i) crossprod(X, U[, i]) / lambda[i]));
-}
-
-calc.v.1d.ssa <- function(x, idx, env = .GlobalEnv, ...)
-  stop("Unsupported SVD method for 1D SSA!")
-
-calc.v.1d.ssa.nutrlan <- function(x, idx, env = .GlobalEnv, ...) .calc.v.hankel(x, idx)
-calc.v.1d.ssa.propack <- function(x, idx, env = .GlobalEnv, ...) .calc.v.hankel(x, idx)
-calc.v.1d.ssa.svd <- function(x, idx, env = .GlobalEnv, ...) .calc.v.svd(x, idx, env)
-calc.v.1d.ssa.eigen <- function(x, idx, env = .GlobalEnv, ...) .calc.v.svd(x, idx, env)
 
 #mes <- function(N = 1000, L = (N %/% 2), n = 50) {
 #  F <- rnorm(N);

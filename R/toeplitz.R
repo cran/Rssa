@@ -43,12 +43,12 @@ Lcor <- function(F, L) {
   .Call("Lcor", F, L);
 }
 
-new.tmat <- function(F, L = (N - 1) %/% 2) {
-  N <- length(F);
+new.tmat <- function(F, fft.plan = NULL, L = (N - 1) %/% 2) {
+  N <- length(F)
   R <- Lcor(F, L)
 
-  storage.mode(R) <- "double";
-  t <- .Call("initialize_tmat", R);
+  storage.mode(R) <- "double"
+  t <- .Call("initialize_tmat", R, if (is.null(fft.plan)) fft.plan.1d(2*L - 1) else fft.plan)
 }
 
 tcols <- function(t) {
@@ -69,6 +69,15 @@ tmatmul <- function(tmat, v, transposed = FALSE) {
   .Call("tmatmul", tmat, v, transposed);
 }
 
+.init.toeplitz.ssa <- function(x, ...) {
+  # Initialize FFT plan
+  .set(x, "fft.plan", fft.plan.1d(x$length))
+
+  x
+}
+
+.hankelize.one.toeplitz.ssa <- .hankelize.one.1d.ssa
+
 decompose.toeplitz.ssa.nutrlan <- function(x,
                                            neig = min(50, L, K),
                                            ...) {
@@ -78,7 +87,8 @@ decompose.toeplitz.ssa.nutrlan <- function(x,
 
   h <- .get(x, "hmat", allow.null = TRUE);
   if (is.null(h)) {
-    h <- new.hmat(F, L = L);
+    fft.plan <- .get(x, "fft.plan")
+    h <- new.hmat(F, fft.plan = fft.plan, L = L)
   }
 
   olambda <- .get(x, "olambda", allow.null = TRUE);
@@ -125,7 +135,8 @@ decompose.toeplitz.ssa.eigen <- function(x, ...,
 
   # Build hankel matrix
   F <- .get(x, "F");
-  h <- new.hmat(F, L = L);
+  fft.plan <- .get(x, "fft.plan")
+  h <- new.hmat(F, fft.plan = fft.plan, L = L);
 
   # Do decomposition
   if ("neig" %in% names(list(...)))
@@ -161,35 +172,36 @@ decompose.toeplitz.ssa.propack <- function(x,
                                            ...,
                                            force.continue = FALSE) {
   N <- x$length; L <- x$window; K <- N - L + 1;
-  
+
   # Check, whether continuation of decomposition is requested
   if (!force.continue && nlambda(x) > 0)
     stop("Continuation of decompostion is not yet implemented for this method.");
-  
+
   F <- .get(x, "F");
 
   h <- .get(x, "hmat", allow.null = TRUE);
   if (is.null(h)) {
-    h <- new.hmat(F, L = L);
+    fft.plan <- .get(x, "fft.plan")
+    h <- new.hmat(F, fft.plan = fft.plan, L = L);
   }
-  
+
   olambda <- .get(x, "olambda", allow.null = TRUE);
   U <- .get(x, "U", allow.null = TRUE);
-  
+
   T <- .get(x, "tmat", allow.null = TRUE);
   if (is.null(T)) {
-    T <- new.tmat(F, L = L);
+    T <- new.tmat(F, L = L)
   }
-  
+
   S <- propack.svd(T, neig = neig, ...);
-  
+
   # Save results
   .set(x, "hmat", h);
   .set(x, "tmat", T);
   .set(x, "olambda", S$d);
   if (!is.null(S$u))
     .set(x, "U", S$u);
-  
+
   num <- length(S$d);
   lambda <- numeric(num);
   V <- matrix(nrow = K, ncol = num);
@@ -198,18 +210,18 @@ decompose.toeplitz.ssa.propack <- function(x,
     lambda[i] <- sqrt(sum(Z^2));
     V[, i] <- Z / lambda[i];
   }
-  
+
   # Save results
   .set(x, "lambda", lambda);
   .set(x, "V", V);
-  
+
   x;
 }
 
 decompose.toeplitz.ssa <- function(x,
-                             neig = min(50, L, K),
-                             ...,
-                             force.continue = FALSE) {
+                                   neig = min(50, L, K),
+                                   ...,
+                                   force.continue = FALSE) {
   N <- x$length; L <- x$window; K <- N - L + 1;
   stop("Unsupported SVD method for Toeplitz SSA!");
 }

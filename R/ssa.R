@@ -1,20 +1,20 @@
 #   R package for Singular Spectrum Analysis
 #   Copyright (c) 2008, 2009 Anton Korobeynikov <asl@math.spbu.ru>
-#   
-#   This program is free software; you can redistribute it 
-#   and/or modify it under the terms of the GNU General Public 
-#   License as published by the Free Software Foundation; 
-#   either version 2 of the License, or (at your option) 
+#
+#   This program is free software; you can redistribute it
+#   and/or modify it under the terms of the GNU General Public
+#   License as published by the Free Software Foundation;
+#   either version 2 of the License, or (at your option)
 #   any later version.
 #
-#   This program is distributed in the hope that it will be 
-#   useful, but WITHOUT ANY WARRANTY; without even the implied 
-#   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
+#   This program is distributed in the hope that it will be
+#   useful, but WITHOUT ANY WARRANTY; without even the implied
+#   warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
 #   PURPOSE.  See the GNU General Public License for more details.
-#   
-#   You should have received a copy of the GNU General Public 
-#   License along with this program; if not, write to the 
-#   Free Software Foundation, Inc., 675 Mass Ave, Cambridge, 
+#
+#   You should have received a copy of the GNU General Public
+#   License along with this program; if not, write to the
+#   Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
 #   MA 02139, USA.
 
 fix.svd.method <- function(svd.method, L, N, ...) {
@@ -76,7 +76,7 @@ ssa <- function(x,
 
   # Normalized the kind to be used
   kind <- sub("-", ".", kind, fixed = TRUE)
-  
+
   # Create information body
   this <- list(length = N,
                window = L,
@@ -93,15 +93,41 @@ ssa <- function(x,
 
   # Save attributes
   .set(this, "Fattr", xattr);
-  
+
   # Make this S3 object
   class(this) <- c(paste(kind, svd.method, sep = "."), kind, "ssa");
+
+  # Perform additional init steps, if necessary
+  .init(this)
 
   # Decompose, if necessary
   if (force.decompose)
     this <- decompose(this, ...);
 
   this;
+}
+
+.init.default <- function(x, ...) {
+  # Do nothing
+  x
+}
+
+.maybe.continue <- function(x, groups, ...) {
+  L <- x$window
+  K <- x$length - L + 1
+
+  # Determine the upper bound of desired eigentriples
+  desired <- max(unlist(groups))
+
+  # Sanity check
+  if (desired > min(L, K))
+    stop("Cannot decompose that much, desired elementary series index is too huge")
+
+  # Continue decomposition, if necessary
+  if (desired > min(nlambda(x), nu(x)))
+    decompose(x, ..., neig = min(desired + 1, L, K))
+
+  desired
 }
 
 precache <- function(x, n, ...) {
@@ -122,32 +148,27 @@ precache <- function(x, n, ...) {
   for (idx in new) {
     # Do actual reconstruction (depending on method, etc)
     .set.series(x,
-                .do.reconstruct(x, idx, env = e), idx);
+                .elseries(x, idx, env = e), idx);
   }
 
   # Cleanup
   rm(list = ls(envir = e, all.names = TRUE),
      envir = e, inherits = FALSE);
-  invisible(gc(verbose = FALSE));
 }
 
 cleanup <- function(x) {
   .remove(x, ls(.storage(x), pattern = "series:"));
-  invisible(gc(verbose = FALSE));
 }
 
-reconstruct.ssa <- function(x, groups, ..., drop = FALSE, cache = TRUE) {
+reconstruct.ssa <- function(x, groups, ...,
+                            drop.attributes = FALSE, cache = TRUE) {
   out <- list();
 
   if (missing(groups))
     groups <- as.list(1:min(nlambda(x), nu(x)));
 
-  # Determine the upper bound of desired eigentriples
-  desired <- max(unlist(groups));
-
   # Continue decomposition, if necessary
-  if (desired > min(nlambda(x), nu(x)))
-    decompose(x, ..., neig = desired);
+  .maybe.continue(x, groups = groups, ...)
 
   # Grab indices of pre-cached values
   info <- .get.series.info(x);
@@ -168,8 +189,8 @@ reconstruct.ssa <- function(x, groups, ..., drop = FALSE, cache = TRUE) {
       out[[i]] <- numeric(prod(x$length));
     } else {
       # Do actual reconstruction (depending on method, etc)
-      out[[i]] <- .do.reconstruct(x, new, env = e);
-  
+      out[[i]] <- .elseries(x, new, env = e);
+
       # Cache the reconstructed series, if this was requested
       if (cache && length(new) == 1)
         .set.series(x, out[[i]], new);
@@ -182,6 +203,9 @@ reconstruct.ssa <- function(x, groups, ..., drop = FALSE, cache = TRUE) {
     attributes(out[[i]]) <- .get(x, "Fattr");
   }
 
+  # Set names and drop the dimension, if necessary
+  names(out) <- paste("F", 1:length(groups), sep="");
+
   # Calculate the residuals
   residuals <- .get(x, "F")
   rgroups <- unique(unlist(groups))
@@ -190,20 +214,18 @@ reconstruct.ssa <- function(x, groups, ..., drop = FALSE, cache = TRUE) {
   rnew <- setdiff(rgroups, info)
   residuals <- residuals - .get.series(x, rcached)
   if (length(rnew))
-    residuals <- residuals - .do.reconstruct(x, rnew, env = e)
+    residuals <- residuals - .elseries(x, rnew, env = e)
 
   # Propagate attributes of residuals
   attributes(residuals) <- .get(x, "Fattr");
   F <- .get(x, "F")
-  if (!drop)
+  if (!drop.attributes)
     attributes(F) <- .get(x, "Fattr")
 
   # Cleanup
   rm(list = ls(envir = e, all.names = TRUE),
      envir = e, inherits = FALSE);
-  gc(verbose = FALSE);
 
-  names(out) <- paste("F", 1:length(groups), sep="");
   attr(out, "residuals") <- residuals;
   attr(out, "series") <- F;
 
@@ -222,9 +244,9 @@ residuals.ssa.reconstruction <- function(object, ...) {
   attr(object, "residuals")
 }
 
-.do.reconstruct <- function(x, idx, env = .GlobalEnv) {
+.elseries.default <- function(x, idx, ..., env = .GlobalEnv) {
   if (max(idx) > nlambda(x))
-    stop("Too few eigentriples computed for this decompostion")
+    stop("Too few eigentriples computed for this decomposition")
 
   lambda <- .get(x, "lambda");
   U <- .get(x, "U");

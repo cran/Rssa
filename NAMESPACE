@@ -46,7 +46,9 @@ export(clone,
        vforecast,
        bforecast,
 # Period estimation
-       parestimate
+       parestimate,
+# Gap filling and rank estimation
+       cadzow
        )
 
 S3method("clone", ssa)
@@ -64,11 +66,9 @@ S3method("decompose", "toeplitz.ssa.nutrlan")
 S3method("reconstruct", ssa)
 S3method("residuals", ssa)
 S3method("residuals", "ssa.reconstruction")
-S3method("calc.v", "1d.ssa.nutrlan")
-S3method("calc.v", "1d.ssa.propack")
-S3method("calc.v", "1d.ssa.svd")
-S3method("calc.v", "1d.ssa.eigen")
+S3method("calc.v", "1d.ssa")
 S3method("calc.v", "2d.ssa")
+S3method("calc.v", "toeplitz.ssa")
 S3method("$", ssa)
 S3method("print", ssa)
 S3method("summary", ssa)
@@ -98,3 +98,5 @@ S3method("bforecast", "1d.ssa")
 S3method("bforecast", "toeplitz.ssa")
 S3method("parestimate", "1d.ssa")
 S3method("parestimate", "toeplitz.ssa")
+S3method("cadzow", "ssa")
+S3method("cadzow", "1d.ssa")
