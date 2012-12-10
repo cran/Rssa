@@ -37,12 +37,12 @@ parestimate.pairs <- function(U) {
 parestimate.esprit <- function(U) {
   Z <- qr.solve(U[-nrow(U),], U[-1, ])
   r <- eigen(Z, only.values = TRUE)$values
-  list(periods=2*pi/Arg(r), modules = Mod(r))
+  list(periods=2*pi/Arg(r), moduli = Mod(r))
 }
 
-"parestimate.1d-ssa" <- function(this, group,
-                                 ...,
-                                 method = c("pairs", "esprit-ls")) {
+parestimate.1d.ssa <- function(x, group,
+                               ...,
+                               method = c("pairs", "esprit-ls")) {
   method <- match.arg(method)
 
   # Determine the upper bound of desired eigentriples
@@ -50,25 +50,19 @@ parestimate.esprit <- function(U) {
   desired <- max(group)
 
   # Continue decomposition, if necessary
-  if (desired > min(nlambda(this), nu(this)))
-    decompose(this, ..., neig = desired)
+  if (desired > min(nlambda(x), nu(x)))
+    decompose(x, ..., neig = desired)
 
   if (identical(method, "pairs")) {
     if (length(group) != 2)
       stop("can estimate for pair of eigenvectors only using `pairs' method")
-    parestimate.pairs(this$U[, group])
+    parestimate.pairs(x$U[, group])
   } else if (identical(method, "esprit-ls")) {
-    parestimate.esprit(this$U[, group])
+    parestimate.esprit(x$U[, group])
   }
 }
 
-"parestimate.toeplitz-ssa" <- `parestimate.1d-ssa`
+parestimate.toeplitz.ssa <- `parestimate.1d.ssa`
 
-parestimate.ssa <- function(this, group,
-                            ...,
-                            method = c("pairs", "esprit-ls")) {
-  stop("generic parameter estimation is not available yet")
-}
-
-parestimate <- function(this, ...)
+parestimate <- function(x, ...)
   UseMethod("parestimate")

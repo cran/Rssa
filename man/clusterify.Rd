@@ -6,19 +6,19 @@
 \description{Try to perform the grouping step of the SSA via clusterization.}
 
 \usage{
-\method{clusterify}{ssa}(this, groups, nclust = length(groups) / 2,
+\method{clusterify}{ssa}(x, group, nclust = length(group) / 2,
            \dots,
            type = c("wcor"), cache = TRUE)
 }
 
 \arguments{
-  \item{this}{SSA object.}
-  \item{groups}{list of integer vectors, initial set of elementary series' groups.}
+  \item{x}{SSA object}
+  \item{group}{vector of integers, initial set of elementary series numbers}
   \item{nclust}{integer, desired number of output series}
-  \item{\dots}{further arguments passed to clusterization methods.}
-  \item{type}{algorithm of clusterization, see 'Details' for more info.}
+  \item{\dots}{further arguments passed to clusterization methods}
+  \item{type}{algorithm of clusterization, see 'Details' for more info}
   \item{cache}{logical, if 'TRUE' then the results of the intermediate
-    calculations are saved and reused as much as possible.}
+    calculations are saved and reused as much as possible}
 }
 
 \value{
@@ -34,14 +34,18 @@
 }
 
 \seealso{
-  \code{\link{hclust}}, \code{\link{wcor}},
-  \code{\link[Rssa:decompose.ssa]{decompose}}
+  \code{\link{hclust}}, \code{\link{wcor}}
 }
 
 \examples{
 # Decompose 'co2' series with default parameters
-s <- new.ssa(co2)
-# Form 5 series out of initial 10:
-l <- clusterify(s, groups = 1:10)
+s <- ssa(co2)
+# Form 3 series from the initial 6 ones:
+lst <- clusterify(s, group = 1:6, nclust=3)
+# Automatic grouping:
+print(lst)
+# Check separability
+w <- wcor(s, groups = lst)
+plot(w)
 }
 

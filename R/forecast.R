@@ -31,7 +31,7 @@ check.for.groups <- function(use.group = TRUE) {
   }
 }
 
-basis2lrr <- function(U, eps = sqrt(.Machine$double.eps)) {
+lrr.default <- function(U, eps = sqrt(.Machine$double.eps), ...) {
   N <- nrow(U);
   lpf <- U %*% t(U[N, , drop = FALSE]);
 
@@ -42,9 +42,9 @@ basis2lrr <- function(U, eps = sqrt(.Machine$double.eps)) {
   lpf[-N] / divider
 }
 
-"lrr.1d-ssa" <- function(this, group, ...) {
+lrr.1d.ssa <- function(x, group, ...) {
   if (missing(group))
-    group <- 1:min(nlambda(this), nu(this))
+    group <- 1:min(nlambda(x), nu(x))
 
   check.for.groups(use.group = TRUE)
 
@@ -52,12 +52,12 @@ basis2lrr <- function(U, eps = sqrt(.Machine$double.eps)) {
   desired <- max(group)
 
   # Continue decomposition, if necessary
-  if (desired > nu(this))
-    decompose(this, ..., neig = desired)
+  if (desired > nu(x))
+    decompose(x, ..., neig = desired)
 
-  U <- .get(this, "U")[, group, drop = FALSE]
+  U <- .get(x, "U")[, group, drop = FALSE]
 
-  res <- basis2lrr(U)
+  res <- lrr.default(U, ...)
   class(res) <- "lrr"
 
   res
@@ -118,38 +118,62 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
   if (only.new) F[(N+1):(N+len)] else F
 }
 
-"rforecast.1d-ssa" <- function(this, groups, len = 1,
-                               base = c("reconstructed", "original"),
-                               only.new = TRUE,
-                               ..., cache = TRUE) {
+
+maybe.fixup.attributes <- function(x, v,
+                                   only.new = TRUE, drop = FALSE) {
+  # Grab the initial set of attributes
+  res <- attributes(v)
+  # Reconstruct the original series
+  F <- .get(x, "F")
+  if (!drop)
+    attributes(F) <- .get(x, "Fattr")
+
+  # Try to guess the indices of known time series classes
+  if (is.ts(F)) {
+    return (ts(v,
+               start = if (only.new) tsp(F)[2] + 1/frequency(F) else start(F),
+               frequency = frequency(F)))
+  }
+
+  return(v)
+}
+
+rforecast.1d.ssa <- function(x, groups, len = 1,
+                             base = c("reconstructed", "original"),
+                             only.new = TRUE,
+                             ...,
+                             drop = FALSE, cache = TRUE) {
+  L <- x$window
+  K <- x$length - L + 1
+
   base <- match.arg(base)
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(this), nu(this)))
+    groups <- as.list(1:min(nlambda(x), nu(x)))
 
   check.for.groups(use.group = FALSE)
 
   # Determine the upper bound of desired eigentriples
-  desired <- max(unlist(groups));
+  desired <- max(max(unlist(groups)), min(20, L, K))
 
   # Continue decomposition, if necessary
-  if (desired > min(nlambda(this), nu(this)))
-    decompose(this, ..., neig = desired);
+  if (desired > min(nlambda(x), nu(x)))
+    decompose(x, ..., neig = desired)
 
   # Grab the reconstructed series if we're basing on them
   if (identical(base, "reconstructed"))
-    r <- reconstruct(this, groups = groups, ..., cache = cache)
+    r <- reconstruct(x, groups = groups, ..., cache = cache)
 
   out <- list()
   for (i in seq_along(groups)) {
     group <- groups[[i]]
 
     # Calculate the LRR corresponding to group
-    lf <- lrr(this, group)
+    lf <- lrr(x, group)
 
     # Calculate the forecasted values
-    out[[i]] <- apply.lrr(if (identical(base, "reconstructed")) r[[i]] else .get(this, "F"),
+    out[[i]] <- apply.lrr(if (identical(base, "reconstructed")) r[[i]] else .get(x, "F"),
                           lf, len, only.new = only.new)
-    # FIXME: try to fixup the attributes
+    out[[i]] <- maybe.fixup.attributes(x, out[[i]], only.new = only.new, drop = drop)
   }
 
   names(out) <- paste(sep = "", "F", 1:length(groups))
@@ -158,30 +182,31 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
   invisible(out)
 }
 
-"vforecast.1d-ssa" <- function(this, groups, len = 1,
-                               only.new = TRUE,
-                               ...) {
-  L <- this$window
-  K <- this$length - L + 1
+vforecast.1d.ssa <- function(x, groups, len = 1,
+                             only.new = TRUE,
+                             ...,
+                             drop = FALSE) {
+  L <- x$window
+  K <- x$length - L + 1
   N <- K + L - 1 + len + L - 1
   N.res <- K + L - 1 + len
 
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(this), nu(this)))
+    groups <- as.list(1:min(nlambda(x), nu(x)))
 
   check.for.groups(use.group = FALSE)
 
   # Determine the upper bound of desired eigentriples
-  desired <- max(unlist(groups))
+  desired <- max(max(unlist(groups)), min(20, L, K))
 
   # Continue decomposition, if necessary
-  if (desired > min(nlambda(this), nu(this)))
-    decompose(this, ..., neig = desired)
+  if (desired > min(nlambda(x), nu(x)))
+    decompose(x, ..., neig = desired)
 
-  lambda <- .get(this, "lambda")
-  U <- .get(this, "U")
+  lambda <- .get(x, "lambda")
+  U <- .get(x, "U")
 
-  V <- if (nv(this) >= desired) .get(this, "V") else NULL
+  V <- if (nv(x) >= desired) .get(x, "V") else NULL
 
   # Make hankel matrix for fast hankelization (we use it for plan)
   h <- new.hmat(double(N), L)
@@ -191,7 +216,7 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
     group <- unique(groups[[i]])
 
     Uet <- U[, group, drop = FALSE]
-    Vet <- if (is.null(V)) calc.v(this, idx = group) else V[, group, drop = FALSE]
+    Vet <- if (is.null(V)) calc.v(x, idx = group) else V[, group, drop = FALSE]
 
     Z <- rbind(t(lambda[group] * t(Vet)), matrix(NA, len + L - 1, length(group)))
 
@@ -211,7 +236,7 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
     }
 
     out[[i]] <- res[(if (only.new) (K+L):N.res else 1:N.res)]
-    # FIXME: try to fixup the attributes
+    out[[i]] <- maybe.fixup.attributes(x, out[[i]], only.new = only.new, drop = drop)
   }
 
   names(out) <- paste(sep = "", "F", 1:length(groups))
@@ -220,17 +245,17 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
   invisible(out)
 }
 
-"bforecast.1d-ssa" <- function(this, group,
-                               len = 1, R = 100, level = 0.95,
-                               type = c("recurrent", "vector"),
-                               ...,
-                               cache = TRUE) {
+bforecast.1d.ssa <- function(x, group,
+                             len = 1, R = 100, level = 0.95,
+                             type = c("recurrent", "vector"),
+                             ...,
+                             drop = FALSE, cache = TRUE) {
   type <- match.arg(type)
   check.for.groups(use.group = TRUE)
   dots <- list(...)
 
   # First, perform the reconstruction and calculate the residuals.
-  r <- reconstruct(this, groups = list(group), ..., cache = cache)
+  r <- reconstruct(x, groups = list(group), ..., cache = cache)
   stopifnot(length(r) == 1)
   res <- residuals(r)
 
@@ -248,90 +273,91 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
   # Do the actual bootstrap forecast
   bF <- matrix(nrow = len, ncol = R)
   bF[] <- replicate(R,
-                    boot.forecast(r[[1]] + sample(res, replace = TRUE), this))
+                    boot.forecast(r[[1]] + sample(res, replace = TRUE), x))
 
   # Finally, calculate the statistics of interest
   cf <- apply(bF, 1, quantile, probs = c((1-level) / 2, (1 + level) / 2))
-  cbind(Value = rowMeans(bF), t(cf))
+  res <- cbind(Value = rowMeans(bF), t(cf))
+  maybe.fixup.attributes(x, res, drop = drop)
 }
 
-"sforecast.1d-ssa" <- function(this, group,
-                               len = 1,
-                               ...,
-                               cache = TRUE) {
+predict.1d.ssa <- function(object,
+                           group, len = 1,
+                           method = c("recurrent", "vector", "bootstrap-recurrent", "bootstrap-vector"),
+                           ...,
+                           drop = FALSE, cache = TRUE) {
+  method <- match.arg(method)
   check.for.groups(use.group = TRUE)
+  dots <- list(...)
+
+  # Calculate a forecast
+  switch (method,
+          recurrent = do.call(rforecast, c(list(object, groups = list(group), len = len, cache = cache), dots))[[1]],
+          vector = do.call(vforecast, c(list(object, groups = list(group), len = len, cache = cache), dots))[[1]],
+          'bootstrap-recurrent' =  do.call(bforecast, c(list(object, type = "recurrent", group = group, len = len, cache = cache), dots)),
+          'bootstrap-vector' =  do.call(bforecast, c(list(object, type = "vector", group = group, len = len, cache = cache), dots)))
+}
+
+forecast.1d.ssa <- function(object,
+                            group, len = 1,
+                            method = c("recurrent", "vector", "bootstrap-recurrent", "bootstrap-vector"),
+                            ...,
+                            drop = FALSE, cache = TRUE) {
+  method <- match.arg(method)
+  check.for.groups(use.group = TRUE)
+  dots <- list(...)
 
   # First, perform the reconstruction.
-  r <- reconstruct(this, groups = list(group), ..., cache = cache)
+  r <- reconstruct(object, groups = list(group), ..., cache = cache)
   stopifnot(length(r) == 1)
-  r <- r[[1]]
 
-  # Calculate the LRR
-  lf <- lrr(this, group)
+  # Perform the forecast
+  f <- do.call(predict, c(list(object, group = group, len = len, method = method, drop = drop, cache = cache), dots))
 
-  # Now calculate the recurrent forecast on sliding part of the series
-  N <- this$length
-  L <- this$window
-  K <- N - L + 1
-  K.l <- K - len
+  # Now perform a "cast" to forecast object
+  require(forecast)
+  F <- .get(object, "F")
+  if (!drop)
+    attributes(F) <- .get(object, "Fattr")
+  res <- list(model = object,
+              method = switch(method,
+                              recurrent = "SSA (recurrent)",
+                              recurrent = "SSA (vector)",
+                              `bootstrap-recurrent` = "SSA (bootstrap recurrent)",
+                              `bootstrap-vector` = "SSA (bootstrap vector)"),
+              fitted = r[[1]],
+              residuals = residuals(r),
+              x = F)
+  # Handle bootstrap forecast separately
+  if (method %in% c( "bootstrap-recurrent", "bootstrap-vector")) {
+    nbnd <- (ncol(f) - 1) / 2
+    res$mean  <- f[, "Value"]
+    res$lower <- f[, seq(from = 2, by = 1, length.out = nbnd)]
+    res$upper <- f[, seq(from = 2 + nbnd, by = 1, length.out = nbnd)]
+    # HACK! Need to change if bforecast defaults will be changed!
+    if (is.element("level", names(dots))) res$level <- dots$level else res$level <- 0.95
+  } else {
+    res$mean <- f
+  }
 
-  if (N < L + len)
-    stop("too large `len' for sliding forecast")
-
-  res <- numeric(K.l)
-  for (i in 1:K.l)
-    res[i] <- apply.lrr(r[i:(i+L)], lf, len = len, only.new = TRUE)[len]
-
+  class(res) <- "forecast"
   res
 }
 
-"lrr.toeplitz-ssa" <- `lrr.1d-ssa`;
-"vforecast.toeplitz-ssa" <- `vforecast.1d-ssa`;
-"rforecast.toeplitz-ssa" <- `rforecast.1d-ssa`;
-"bforecast.toeplitz-ssa" <- `bforecast.1d-ssa`;
-"sforecast.toeplitz-ssa" <- `sforecast.1d-ssa`;
+"lrr.toeplitz.ssa" <- `lrr.1d.ssa`;
+"vforecast.toeplitz.ssa" <- `vforecast.1d.ssa`;
+"rforecast.toeplitz.ssa" <- `rforecast.1d.ssa`;
+"bforecast.toeplitz.ssa" <- `bforecast.1d.ssa`;
+"forecast.toeplitz.ssa" <- `forecast.1d.ssa`;
+"predict.toeplitz.ssa" <- `predict.1d.ssa`;
 
-rforecast.ssa <- function(x, groups, len = 1,
-                          base = c("reconstructed", "original"),
-                          only.new = TRUE,
-                          ..., cache = TRUE) {
-  stop("generic recurrent forecast not implemented yet!")
-}
-
-bforecast.ssa <- function(x, group,
-                          len = 1, R = 100, level = 0.95,
-                          type = c("recurrent", "vector"),
-                          ...,
-                          cache = TRUE) {
-  stop("generic bootstrapped forecast not implemented yet!")
-}
-
-lrr.ssa <- function(x, group) {
-  stop("generic LRR calculation not implemented yet!")
-}
-
-vforecast.ssa <- function(x, groups, len = 1,
-                          only.new = TRUE,
-                          ...) {
-  stop("generic vector forecast not implemented yet!")
-}
-
-sforecast.ssa <- function(x, group, len = 1,
-                          ...,
-                          cache = TRUE) {
-  stop("generic sliding forecast not implemented yet!")
-}
-
-
-lrr <- function(this, ...)
+lrr <- function(x, ...)
   UseMethod("lrr")
 roots <- function(x, ...)
   UseMethod("roots")
-rforecast <- function(this, ...)
+rforecast <- function(x, ...)
   UseMethod("rforecast")
-vforecast <- function(this, ...)
+vforecast <- function(x, ...)
   UseMethod("vforecast")
-bforecast <- function(this, ...)
+bforecast <- function(x, ...)
   UseMethod("bforecast")
-sforecast <- function(this, ...)
-  UseMethod("sforecast")

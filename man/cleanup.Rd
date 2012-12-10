@@ -10,13 +10,13 @@
 }
 
 \usage{
-\method{cleanup}{ssa}(this, \dots)
+cleanup(x)
 }
 
 \arguments{
-  \item{this}{object to be cleaned}
-  \item{\dots}{additional arguments to 'cleanup'.}
+  \item{x}{object to be cleaned}
 }
+
 \details{
   For the sake of memory efficiency SSA objects hold references to the
   data, not the data itself. That is why they can hold huge amount of
@@ -26,6 +26,6 @@
   can be used later inside SSA object. This includes (but not limited
   to) elementary series, etc.
 
-  'cleanup' call deletes all pre-cached stuff freeing memory necessary
+  \code{cleanup} call deletes all pre-cached stuff freeing memory necessary
   for calculations.
 }

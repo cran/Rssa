@@ -42,12 +42,17 @@ fix.svd.method <- function(svd.method, L, N, ...) {
   svd.method
 }
 
-new.ssa <- function(x,
-                    L = (N + 1) %/% 2,
-                    ...,
-                    kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa"),
-                    svd.method = c("nutrlan", "propack", "svd", "eigen"),
-                    force.decompose = TRUE) {
+new.ssa <- function(...) {
+  warning("`new.ssa' method is deprecated, use `ssa' instead")
+  ssa(...)
+}
+
+ssa <- function(x,
+                L = (N + 1) %/% 2,
+                ...,
+                kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa"),
+                svd.method = c("nutrlan", "propack", "svd", "eigen"),
+                force.decompose = TRUE) {
   svd.method <- match.arg(svd.method);
   kind <- match.arg(kind);
   xattr <- attributes(x);
@@ -69,6 +74,9 @@ new.ssa <- function(x,
     N <- dim(x);
   }
 
+  # Normalized the kind to be used
+  kind <- sub("-", ".", kind, fixed = TRUE)
+  
   # Create information body
   this <- list(length = N,
                window = L,
@@ -96,15 +104,15 @@ new.ssa <- function(x,
   this;
 }
 
-precache.ssa <- function(this, n, ...) {
+precache <- function(x, n, ...) {
   if (missing(n)) {
     warning("Amount of sub-series missed, precaching EVERYTHING",
             immediate. = TRUE);
-    n <- nlambda(this);
+    n <- nlambda(x);
   }
 
   # Calculate numbers of sub-series to be calculated
-  info <- .get.series.info(this);
+  info <- .get.series.info(x);
   new <- setdiff(1:n, info);
 
   # Hack-hack-hack! Some routines will work much more efficiently if we'll
@@ -113,8 +121,8 @@ precache.ssa <- function(this, n, ...) {
 
   for (idx in new) {
     # Do actual reconstruction (depending on method, etc)
-    .set.series(this,
-                .do.reconstruct(this, idx, env = e), idx);
+    .set.series(x,
+                .do.reconstruct(x, idx, env = e), idx);
   }
 
   # Cleanup
@@ -123,33 +131,33 @@ precache.ssa <- function(this, n, ...) {
   invisible(gc(verbose = FALSE));
 }
 
-cleanup.ssa <- function(this, ...) {
-  .remove(this, ls(.storage(this), pattern = "series:"));
+cleanup <- function(x) {
+  .remove(x, ls(.storage(x), pattern = "series:"));
   invisible(gc(verbose = FALSE));
 }
 
-reconstruct.ssa <- function(this, groups, ..., cache = TRUE) {
+reconstruct.ssa <- function(x, groups, ..., drop = FALSE, cache = TRUE) {
   out <- list();
 
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(this), nu(this)));
+    groups <- as.list(1:min(nlambda(x), nu(x)));
 
   # Determine the upper bound of desired eigentriples
   desired <- max(unlist(groups));
 
   # Continue decomposition, if necessary
-  if (desired > min(nlambda(this), nu(this)))
-    decompose(this, ..., neig = desired);
+  if (desired > min(nlambda(x), nu(x)))
+    decompose(x, ..., neig = desired);
 
   # Grab indices of pre-cached values
-  info <- .get.series.info(this);
+  info <- .get.series.info(x);
 
   # Hack-hack-hack! Some routines will work much more efficiently if we'll
   # pass space to store some data which is needed to be calculated only once.
   e <- new.env();
 
   # Do actual reconstruction. Calculate the residuals on the way
-  residuals <- this$F
+  residuals <- .get(x, "F")
   for (i in seq_along(groups)) {
     group <- groups[[i]];
     new <- setdiff(group, info);
@@ -157,28 +165,38 @@ reconstruct.ssa <- function(this, groups, ..., cache = TRUE) {
 
     if (length(new) == 0) {
       # Nothing to compute, just create zero output
-      out[[i]] <- numeric(prod(this$length));
+      out[[i]] <- numeric(prod(x$length));
     } else {
       # Do actual reconstruction (depending on method, etc)
-      out[[i]] <- .do.reconstruct(this, new, env = e);
+      out[[i]] <- .do.reconstruct(x, new, env = e);
   
       # Cache the reconstructed series, if this was requested
       if (cache && length(new) == 1)
-        .set.series(this, out[[i]], new);
+        .set.series(x, out[[i]], new);
     }
 
     # Add pre-cached series
-    out[[i]] <- out[[i]] + .get.series(this, cached);
-
-    # Calculate the residuals
-    residuals <- residuals - out[[i]]
+    out[[i]] <- out[[i]] + .get.series(x, cached);
 
     # Propagate attributes (e.g. dimension for 2d-SSA)
-    attributes(out[[i]]) <- .get(this, "Fattr");
+    attributes(out[[i]]) <- .get(x, "Fattr");
   }
 
+  # Calculate the residuals
+  residuals <- .get(x, "F")
+  rgroups <- unique(unlist(groups))
+  info <- .get.series.info(x);
+  rcached <- intersect(rgroups, info)
+  rnew <- setdiff(rgroups, info)
+  residuals <- residuals - .get.series(x, rcached)
+  if (length(rnew))
+    residuals <- residuals - .do.reconstruct(x, rnew, env = e)
+
   # Propagate attributes of residuals
-  attributes(residuals) <- .get(this, "Fattr");
+  attributes(residuals) <- .get(x, "Fattr");
+  F <- .get(x, "F")
+  if (!drop)
+    attributes(F) <- .get(x, "Fattr")
 
   # Cleanup
   rm(list = ls(envir = e, all.names = TRUE),
@@ -187,10 +205,10 @@ reconstruct.ssa <- function(this, groups, ..., cache = TRUE) {
 
   names(out) <- paste("F", 1:length(groups), sep="");
   attr(out, "residuals") <- residuals;
-  attr(out, "series") <- this$F;
+  attr(out, "series") <- F;
 
   # Reconstructed series can be pretty huge...
-  class(out) <- paste(c(this$kind, "ssa"), "reconstruction", sep = ".")
+  class(out) <- paste(c(x$kind, "ssa"), "reconstruction", sep = ".")
   invisible(out);
 }
 
@@ -204,88 +222,88 @@ residuals.ssa.reconstruction <- function(object, ...) {
   attr(object, "residuals")
 }
 
-.do.reconstruct <- function(this, idx, env = .GlobalEnv) {
-  if (max(idx) > nlambda(this))
+.do.reconstruct <- function(x, idx, env = .GlobalEnv) {
+  if (max(idx) > nlambda(x))
     stop("Too few eigentriples computed for this decompostion")
 
-  lambda <- .get(this, "lambda");
-  U <- .get(this, "U");
+  lambda <- .get(x, "lambda");
+  U <- .get(x, "U");
 
-  res <- numeric(prod(this$length));
+  res <- numeric(prod(x$length));
 
   for (i in idx) {
-    if (nv(this) >= i) {
+    if (nv(x) >= i) {
       # FIXME: Check, whether we have factor vectors for reconstruction
       # FIXME: Get rid of .get call
-      V <- .get(this, "V")[, i];
+      V <- .get(x, "V")[, i];
     } else {
       # No factor vectors available. Calculate them on-fly.
-      V <- calc.v(this, i, env = env);
+      V <- calc.v(x, i, env = env);
     }
 
-    res <- res + lambda[i] * .hankelize.one(this, U = U[, i], V = V);
+    res <- res + lambda[i] * .hankelize.one(x, U = U[, i], V = V);
   }
 
   res;
 }
 
-nu.ssa <- function(this, ...) {
-  ifelse(.exists(this, "U"), ncol(.get(this, "U")), 0);
+nu <- function(x) {
+  ifelse(.exists(x, "U"), ncol(.get(x, "U")), 0);
 }
 
-nv.ssa <- function(this, ...) {
-  ifelse(.exists(this, "V"), ncol(.get(this, "V")), 0);
+nv <- function(x) {
+  ifelse(.exists(x, "V"), ncol(.get(x, "V")), 0);
 }
 
-nlambda.ssa <- function(this, ...) {
-  ifelse(.exists(this, "lambda"), length(.get(this, "lambda")), 0);
+nlambda <- function(x) {
+  ifelse(.exists(x, "lambda"), length(.get(x, "lambda")), 0);
 }
 
-clone.ssa <- function(this, copy.storage = TRUE, copy.cache = TRUE, ...) {
-  obj <- .clone(this, copy.storage = copy.storage);
+clone.ssa <- function(x, copy.storage = TRUE, copy.cache = TRUE, ...) {
+  obj <- .clone(x, copy.storage = copy.storage);
   if (copy.cache == FALSE)
     cleanup(obj);
 
   obj;
 }
 
-clusterify.ssa <- function(this, groups, nclust = length(groups) / 2,
+clusterify.ssa <- function(x, group, nclust = length(group) / 2,
                            ...,
                            type = c("wcor"), cache = TRUE) {
   type <- match.arg(type)
 
-  if (missing(groups))
-    groups <- as.list(1:nlambda(this));
+  if (missing(group))
+    group <- as.list(1:nlambda(x));
 
   if (identical(type, "wcor")) {
-    w <- wcor(this, groups = groups, ..., cache = cache);
+    w <- wcor(x, groups = group, ..., cache = cache);
     g <- clusterify(w, nclust = nclust, ...);
-    out <- lapply(g, function(idx) unlist(groups[idx]));
+    out <- lapply(g, function(idx) unlist(group[idx]));
   } else {
     stop("Unsupported clusterification method!");
   }
   out;
 }
 
-'$.ssa' <- function(this, name) {
-  if (ind <- charmatch(name, names(this), nomatch = 0))
-    return (this[[ind]]);
+'$.ssa' <- function(x, name) {
+  if (ind <- charmatch(name, names(x), nomatch = 0))
+    return (x[[ind]]);
 
-  if (.exists(this, name))
-    return (.get(this, name));
+  if (.exists(x, name))
+    return (.get(x, name));
 
   NULL;
 }
 
-.object.size.ssa <- function(this, pat = NULL) {
-  env <- .storage(this);
+.object.size <- function(x, pat = NULL) {
+  env <- .storage(x);
   if (is.null(pat)) {
     members <- ls(envir = env, all.names = TRUE);
   } else {
     members <- ls(envir = env, pattern = pat);
   }
 
-  l <- sapply(members, function(x) object.size(.get(this, x)))
+  l <- sapply(members, function(el) object.size(.get(x, el)))
 
   ifelse(length(l), sum(l), 0);
 }
@@ -313,11 +331,3 @@ print.ssa <- function(x, digits = max(3, getOption("digits") - 3), ...) {
 
 summary.ssa <- function(object, digits = max(3, getOption("digits") - 3), ...)
   print.ssa(x = object, digits = digits, ...)
-
-calc.v.ssa <- function(this, idx, env = .GlobalEnv, ...)
-  stop("Unsupported SVD method for SSA!");
-
-decompose.ssa <- function(x, neig = min(50, L, K), ...) {
-  L <- K <- 0;
-  stop("Unsupported SVD method for SSA!");
-}

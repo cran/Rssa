@@ -9,13 +9,13 @@
   faster.
 }
 \usage{
-\method{precache}{ssa}(this, n, \dots)
+precache(x, n, \dots)
 }
 
 \arguments{
-  \item{this}{SSA object.}
-  \item{n}{integer, number of series to calculate and save.}
-  \item{\dots}{further arguments passed to the reconstruction routines.}
+  \item{x}{SSA object}
+  \item{n}{integer, number of series to calculate and save}
+  \item{\dots}{further arguments passed to the reconstruction routines}
 }
 
 \note{
@@ -30,7 +30,7 @@
 
 \examples{
 # Decompose 'co2' series with default parameters
-s <- new.ssa(co2)
+s <- ssa(co2)
 summary(s)
 # Precache the stuff
 precache(s)
