@@ -27,12 +27,22 @@
 .storage <- function(x)
   attr(x, ".env");
 
-.get <- function(x, name, allow.null = FALSE) {
-  ret <- NULL;
-  if (!allow.null || .exists(x, name))
-    ret <- get(name, envir = .storage(x));
+.get <- function(x, name, default, allow.null = FALSE) {
+  ret <- NULL
+  # Make sure default is evaluated only when necessary
+  if (.exists(x, name))
+    ret <- get(name, envir = .storage(x))
+  else if (!allow.null || !missing(default))
+    ret <- default
 
-  ret;
+  ret
+}
+
+.get.or.create <- function(x, name, default) {
+  (if (.exists.non.null(x, name))
+   get(name, envir = .storage(x))
+  else
+   assign(name, default, envir = .storage(x), inherits = FALSE))
 }
 
 .set <- function(x, name, value)
@@ -40,6 +50,19 @@
 
 .exists <- function(x, name)
   exists(name, envir = .storage(x), inherits = FALSE);
+
+.is.extptrnull <- function(x)
+  .Call("is_extptrnull", x)
+
+.exists.non.null <- function(x, name) {
+  ret <- FALSE
+
+  if (exists(name, envir = .storage(x), inherits = FALSE)) {
+    val <- get(name, envir = .storage(x))
+    ret <- !is.null(val) && (typeof(val) != "externalptr" || !.is.extptrnull(val))
+  }
+  ret
+}
 
 .remove <- function(x, name)
   rm(list = name, envir = .storage(x), inherits = FALSE);
@@ -104,6 +127,8 @@ clusterify <- function(x, ...)
   UseMethod("clusterify");
 calc.v <- function(x, ...)
   UseMethod("calc.v");
+wnorm <- function(x, ...)
+  UseMethod("wnorm")
 
 .hankelize.one <- function(x, ...)
   UseMethod(".hankelize.one")

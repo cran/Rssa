@@ -114,18 +114,18 @@ ssa <- function(x,
 
 .maybe.continue <- function(x, groups, ...) {
   L <- x$window
-  K <- x$length - L + 1
+  K <- x$length - x$window + 1
 
   # Determine the upper bound of desired eigentriples
   desired <- max(unlist(groups))
 
   # Sanity check
-  if (desired > min(L, K))
+  if (desired > min(prod(L), prod(K)))
     stop("Cannot decompose that much, desired elementary series index is too huge")
 
   # Continue decomposition, if necessary
   if (desired > min(nlambda(x), nu(x)))
-    decompose(x, ..., neig = min(desired + 1, L, K))
+    decompose(x, ..., neig = min(desired + 1, prod(L), prod(K)))
 
   desired
 }
@@ -353,3 +353,6 @@ print.ssa <- function(x, digits = max(3, getOption("digits") - 3), ...) {
 
 summary.ssa <- function(object, digits = max(3, getOption("digits") - 3), ...)
   print.ssa(x = object, digits = digits, ...)
+
+wnorm.ssa <- function(x, ...)
+  stop("`wnorm' is not implemented for this kind of SSA")
