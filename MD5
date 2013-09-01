@@ -1,4 +1,4 @@
-6fd3a95c4356114e35a1a41b1b201399 *DESCRIPTION
+2c7a1f25b89aa1c869ee8714a67bd16a *DESCRIPTION
 547bd80a1c2ebfbbb56025dfeddeee96 *NAMESPACE
 c0ff6957eb45a5c9f600dcdb92acfd1d *R/cadzow.R
 2b0d22220b413bcfd552c0f331ff3e88 *R/chankel.R
@@ -42,7 +42,7 @@ f1b3b6048b666a73e9fe5cbfda1c7a99 *inst/extdata/toeplitz.testdata.rda
 14c69833fcdfd70579e6d2b4d82b9327 *inst/tests/test-forecast.finite.rank.R
 e887f1848683af479564b690bd525636 *inst/tests/test-is.fft.plan.R
 4a49d31ec9ed4dbd38ae81a0ce836ee9 *inst/tests/test-mssa-shaped.R
-3980fcbb4535e3e5fdd99b4be2dfe312 *inst/tests/test-mssa.R
+290fa4ec7c10b527c7efd85a71b0aa97 *inst/tests/test-mssa.R
 766535845fd94220903dc0d455df231f *inst/tests/test-parest.R
 ffc4b585043e6773443a08e923c3e2a3 *inst/tests/test-serialize.R
 9c1c9c5f77fd4b08942463dbd207f748 *inst/tests/test-sh2dssa.R
