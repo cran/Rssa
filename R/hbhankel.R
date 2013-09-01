@@ -20,43 +20,91 @@
 
 #   Routines for hankel-block hankel (aka 2d) SSA
 
-tcircpile <- function(F, Lx = (Nx + 1) %/% 2, Ly = (Ny + 1) %/% 2) {
-  Nx <- nrow(F); Ny <- ncol(F)
-  Kx <- Nx - Lx + 1; Ky <- Ny - Ly + 1
 
-  .res <- list(Lx = Lx, Ly = Ly,
-               Kx = Kx, Ky = Ky)
-
-  TF <- cbind(F[,Ky:Ny],F[,1:(Ky-1)])
-  .res$Cblock <- fft(rbind(TF[Kx:Nx,],TF[1:(Kx-1),]))
-
-  .res
+fft2 <- function(X, inverse = FALSE) {
+  # TODO Use FTTW here
+  t(mvfft(t(mvfft(X, inverse = inverse)), inverse = inverse))
 }
 
-hbhmatmul.old <- function(C, v) {
-  revv <- matrix(c(rev(v), rep(0, C$Kx*(C$Ly-1))), C$Kx, ncol(C$Cblock))
-  revv <- rbind(revv, matrix(0, (C$Lx-1), ncol(revv)))
+convolve2.open <- function(X, Y, conj = FALSE) {
+  new.dim <- dim(X) + dim(Y) - 1
 
-  mult <- fft(C$Cblock * fft(revv), inverse = TRUE)
+  x <- matrix(0, new.dim[1], new.dim[2])
+  x[1:nrow(X), 1:ncol(X)] <- X
 
-  Re((mult/(prod(dim(C$Cblock))))[1:C$Lx,1:C$Ly])
+  y <- matrix(0, new.dim[1], new.dim[2])
+  y[1:nrow(Y), 1:ncol(Y)] <- Y
+
+  Re(fft2(fft2(x) * if (conj) Conj(fft2(y)) else fft2(y), inverse = TRUE) / prod(new.dim))
 }
 
-thbhmatmul.old <- function(C, v) {
-  revv <- matrix(c(rep(0, C$Lx*(C$Ky-1)), rev(v)), C$Lx, ncol(C$Cblock))
-  revv <- rbind(matrix(0, (C$Kx-1), ncol(revv)), revv)
+convolve2.filter <- function(X, Y, conj = TRUE) {
+  new.dim <- dim(X) - dim(Y) + 1
 
-  mult <- fft(C$Cblock * fft(revv), inverse = TRUE)
+  x <- X
+  y <- matrix(0, nrow(X), ncol(X))
+  y[1:nrow(Y), 1:ncol(Y)] <- Y
 
-  Re((mult/(prod(dim(C$Cblock))))[C$Lx:(C$Lx+C$Kx-1),C$Ly:(C$Ly+C$Ky-1)])
+  tmp <- Re(fft2(fft2(x) * if (conj) Conj(fft2(y)) else fft2(y), inverse = TRUE) / prod(dim(X)))
+  tmp[seq_len(new.dim[1]), seq_len(new.dim[2])]
 }
 
-new.hbhmat <- function(F,
-                       L = (N + 1) %/% 2) {
+factor.mask <- function(field.mask, window.mask) {
+  field.mask[] <- as.numeric(field.mask)
+  window.mask[] <- as.numeric(window.mask)
+  tmp <- convolve2.filter(field.mask, window.mask)
+
+  abs(tmp - sum(window.mask)) < 0.5 # ==0, but not exact in case of numeric error
+}
+
+field.weights <- function(window.mask, factor.mask) {
+  window.mask[] <- as.numeric(window.mask)
+  factor.mask[] <- as.numeric(factor.mask)
+  res <- convolve2.open(factor.mask, window.mask)
+  res[] <- as.integer(round(res))
+
+  res
+}
+
+circle.mask <- function(R) {
+  I <- matrix(seq_len(2*R - 1), 2*R - 1, 2*R - 1)
+  J <- t(I)
+
+  (I - R)^2 + (J - R)^2 < R^2
+}
+
+triangle.mask <- function(side) {
+  I <- matrix(seq_len(side), side, side)
+  J <- t(I)
+
+  I + J <= side + 1
+}
+
+new.hbhmat <- function(F, L = (N + 1) %/% 2,
+                       wmask = NULL, fmask = NULL, weights = NULL) {
   N <- dim(F)
+
   storage.mode(F) <- "double"
   storage.mode(L) <- "integer"
-  h <- .Call("initialize_hbhmat", F, L[1], L[2])
+
+  if (!is.null(wmask)) {
+    storage.mode(wmask) <- "logical"
+  }
+
+  if (!is.null(fmask)) {
+    storage.mode(fmask) <- "logical"
+  }
+
+  if (!is.null(weights)) {
+    mask <- weights > 0
+    F[!mask] <- mean(F[mask]) # Improve FFT stability & remove NAs
+  } else {
+    weights <- tcrossprod(.hweights.default(N[1], L[1]),
+                          .hweights.default(N[2], L[2]))
+  }
+  storage.mode(weights) <- "integer"
+
+  h <- .Call("initialize_hbhmat", F, L[1], L[2], wmask, fmask, weights)
 }
 
 hbhcols <- function(h) {
@@ -79,7 +127,20 @@ hbhmatmul <- function(hmat, v, transposed = FALSE) {
 
 .get.or.create.hbhmat <- function(x) {
   .get.or.create(x, "hmat",
-                 new.hbhmat(x$F, L = x$window))
+                 new.hbhmat(x$F, L = x$window, wmask = x$wmask, fmask = x$fmask,
+                            weights = x$weights))
+}
+
+as.matrix.hbhmat <- function(x) {
+  apply(diag(hbhcols(x)), 2, hbhmatmul, hmat = x)
+}
+
+tcrossprod.hbhmat <- function(x) {
+  apply(diag(hbhrows(x)), 2, function(u) hbhmatmul(hmat = x, hbhmatmul(hmat = x, u, transposed = TRUE)))
+}
+
+.traj.dim.2d.ssa <- function(x) {
+  c(prod(x$window), prod(x$length - x$window + 1))
 }
 
 decompose.2d.ssa <- function(x,
@@ -87,6 +148,58 @@ decompose.2d.ssa <- function(x,
                              ...) {
   N <- x$length; L <- x$window; K <- N - L + 1
   stop("Unsupported SVD method for 2D.SSA!")
+}
+
+decompose.2d.ssa.svd <- function(x,
+                                 neig = min(50, prod(L), prod(K)),
+                                 ...,
+                                 force.continue = FALSE) {
+  N <- x$length; L <- x$window; K <- N - L + 1
+
+  # Check, whether continuation of decomposition is requested
+  if (!force.continue && nlambda(x) > 0)
+    stop("Continuation of decomposition is not yet implemented for this method.")
+
+  # Create circulant and convert it to ordinary matrix
+  h <- as.matrix.hbhmat(.get.or.create.hbhmat(x))
+
+  # Do decompostion
+  S <- svd(h, nu = neig, nv = neig)
+
+  # Save results
+  .set(x, "lambda", S$d)
+  if (!is.null(S$u))
+    .set(x, "U", S$u)
+  if (!is.null(S$v))
+    .set(x, "V", S$v)
+
+  x
+}
+
+decompose.2d.ssa.eigen <- function(x,
+                                   neig = min(50, prod(L), prod(K)),
+                                   ...,
+                                   force.continue = FALSE) {
+  N <- x$length; L <- x$window; K <- N - L + 1
+
+  # Check, whether continuation of decomposition is requested
+  if (!force.continue && nlambda(x) > 0)
+    stop("Continuation of decomposition is not yet implemented for this method.")
+
+  # Create circulant and compute XX^T in form of ordinary matrix
+  C <- tcrossprod.hbhmat(.get.or.create.hbhmat(x))
+
+  # Do decompostion
+  S <- eigen(C, symmetric = TRUE)
+
+  # Fix small negative values
+  S$values[S$values < 0] <- 0
+
+  # Save results
+  .set(x, "lambda", sqrt(S$values[1:neig]))
+  .set(x, "U", S$vectors[, 1:neig, drop = FALSE])
+
+  x
 }
 
 decompose.2d.ssa.nutrlan <- function(x,
@@ -146,26 +259,11 @@ calc.v.2d.ssa <- function(x, idx, ...) {
 .hankelize.one.2d.ssa <- function(x, U, V) {
   h <- .get.or.create.hbhmat(x)
   storage.mode(U) <- storage.mode(V) <- "double"
-  .Call("hbhankelize_one_fft", U, V, h)
+  F <- .Call("hbhankelize_one_fft", U, V, h)
+  w <- .get(x, "weights")
+  if (!is.null(w)) {
+    F[w == 0] <- NA
+  }
+
+  F
 }
-
-#mes <- function(Nx = 200, Ny = 90, Lx = 100, Ly = 50, n = 50) {
-#  Kx <- Nx - Lx +1;
-#  Ky <- Ny - Ly +1;
-#  F <- matrix(rnorm(Nx*Ny),Nx,Ny);
-#  F <- matrix(1:(Nx*Ny),Nx,Ny);
-#  C <- tcircpile(F, Lx,Ly);
-#  X <- outer(1:(Lx*Ly), 1:(Kx*Ky), function(x,z) { F[(((x-1)%%Lx)+((z-1)%%Kx))+(((x-1)%/%Lx)+((z-1)%/%Kx))*Nx+1] });
-
-  #X <- matrix(X, Lx*Ly, Kx*Ky);
-
-#  v <- rnorm(Kx*Ky);
-#  st1 <- system.time(for (i in 1:n) X %*% v);
-#  st2 <- system.time(for (i in 1:n) hbhmatmul(C, matrix(v,Kx,Ky)));
-
-#  print(c(st1[["user.self"]],st2[["user.self"]]),5);
-
-  #v1 <- X %*% v;
-  #v2 <- hbhmatmul(C, matrix(v,Kx,Ky));
-  #print(max(abs(v1-v2)));
-#}

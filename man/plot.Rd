@@ -9,6 +9,7 @@
 \method{plot}{ssa}(x,
      type = c("values", "vectors", "paired", "series", "wcor"),
      \dots,
+     vectors = c("eigen", "factor"),
      plot.contrib = TRUE,
      numvalues = nlambda(x),
      numvectors = min(nlambda(x), 10),
@@ -20,7 +21,9 @@
 \arguments{
   \item{x}{SSA object holding the decomposition}
   \item{type}{Type of the plot (see 'Details' for more information)}
-  \item{\dots}{Arguments to be passed to methods, such as graphical parameters}
+  \item{\dots}{Arguments to be passed to methods, such as graphical
+    parameters}
+  \item{vectors}{For type = 'vectors', choose the vectors to plot}
   \item{plot.contrib}{logical. If 'TRUE' (the default), the contribution
     of the component to the total variance is plotted}
   \item{numvalues}{Number of eigenvalues to plot (for type = 'values')}
@@ -34,12 +37,12 @@
   This function is the single entry to various plots of SSA objects. Right
   now this includes:
   \describe{
-    \item{values}{plot the graph of eigenvalues.}
+    \item{values}{plot the graph of the singular values.}
     \item{vectors}{plot the eigenvectors.}
     \item{paired}{plot the pairs of eigenvectors (useful for the
       detection of periodic components).}
     \item{series}{plot the reconstructed series.}
-    \item{wcor}{plot the W-correlation matrix for the reconstructed series.}
+    \item{wcor}{plot the W-correlation matrix for the reconstructed objects.}
   }
 
   Additional (non-standard) graphical parameters which can be transfered via \dots:
@@ -57,10 +60,13 @@
       argument in 'Details') for each component. 'same' means one breakpoints' vector for all
       component (will be evaluated automatically too).}
     \item{cuts}{for 2d-reconstruction-plot, the number of levels the range of \code{z} would be divided into.}
+    \item{fill.color}{color or 'NULL'. Defines background color for shaped 2d-eigenvectors plot. If 'NULL', standard white
+      background will be used.}
   }
 }
 
 \examples{
+\donttest{
 # Decompose 'co2' series with default parameters
 s <- ssa(co2)
 # Plot the eigenvalues
@@ -76,7 +82,7 @@ plot(s, type = "series", groups = list(1:4))
 # Plot the eigenvalues by points only
 plot(s, type = "values", plot.type = "p")
 
-# Artificial field for 2dSSA
+# Artificial image for 2dSSA
 mx <- outer(1:50, 1:50,
             function(i, j) sin(2*pi * i/17) * cos(2*pi * j/7) + exp(i/25 - j/20)) +
       rnorm(50^2, sd = 0.1)
@@ -87,5 +93,12 @@ plot(s, type = "values")
 # Plot eigenvectors for first 6 components
 plot(s, type = "vectors", idx = 1:6,
      ref = TRUE, at = "same", cuts = 50,
-     plot.contrib = FALSE, symmetric = TRUE)
+     plot.contrib = TRUE, symmetric = TRUE)
+# Plot factor vectors for first 6 components
+plot(s, type = "vectors", vectors = "factor", idx = 1:6,
+     ref = TRUE, at = "same", cuts = 50,
+     plot.contrib = TRUE, symmetric = TRUE)
+# Plot wcor for first 12 components
+plot(s, type = "wcor", groups = 1:12, grid = c(2, 6))
+}
 }

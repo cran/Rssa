@@ -4,6 +4,8 @@
 \alias{vforecast.ssa}
 \alias{vforecast.1d.ssa}
 \alias{vforecast.toeplitz.ssa}
+\alias{vforecast.mssa}
+\alias{vforecast.cssa}
 \title{Perform vector SSA forecasting of the series}
 
 \description{
@@ -13,7 +15,13 @@
 \usage{
 \method{vforecast}{1d.ssa}(x, groups, len = 1, only.new = TRUE, \dots,
           drop = TRUE, drop.attributes = FALSE)
+\method{vforecast}{cssa}(x, groups, len = 1, only.new = TRUE, \dots,
+          drop = TRUE, drop.attributes = FALSE)
 \method{vforecast}{toeplitz.ssa}(x, groups, len = 1, only.new = TRUE, \dots,
+          drop = TRUE, drop.attributes = FALSE)
+\method{vforecast}{mssa}(x, groups, len = 1,
+          direction = c("row", "column"),
+          only.new = TRUE, \dots,
           drop = TRUE, drop.attributes = FALSE)
 }
 
@@ -21,6 +29,8 @@
   \item{x}{SSA object holding the decomposition}
   \item{groups}{list, the grouping of eigentriples to be used in the forecast}
   \item{len}{integer, the desired length of the forecasted series}
+  \item{direction}{direction of forecast in multichannel SSA case, "column"
+    stands for so-called L-forecast and "row" stands for K-forecast}
   \item{only.new}{logical, if 'TRUE' then only forecasted values are returned,
     whole series otherwise}
   \item{\dots}{additional arguments passed to \code{\link{decompose}}
@@ -43,10 +53,24 @@
 }
 
 \value{
-  List of vectors of forecasted series. Elements of the list are
-  named 'F1', 'F2', and so on.
+  List of forecasted objects. Elements of the list have the same names
+  as elements of \code{groups}. If group is unnamed, corresponding
+  component gets name `Fn', where `n' is its index in \code{groups}
+  list.
 
-  The series itself, if length of groups is one and 'drop = TRUE'.
+  Or, the forecasted object itself, if length of groups is one and 'drop = TRUE'.
+}
+
+\references{
+  Golyandina, N., Nekrutkin, V. and Zhigljavsky, A. (2001): \emph{Analysis of
+    Time Series Structure: SSA and related techniques.} Chapman and
+  Hall/CRC. ISBN 1584881941
+
+  Golyandina, N. and Stepanov, D. (2005): \emph{SSA-based approaches to
+    analysis and forecast of multidimensional time series}. In
+    Proceedings of the 5th St.Petersburg Workshop on Simulation, June
+    26-July 2, 2005, St. Petersburg State University, St. Petersburg,
+    293--298. \url{http://www.gistatgroup.com/gus/mssa2.pdf}
 }
 
 \seealso{

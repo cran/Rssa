@@ -10,22 +10,31 @@
 \usage{
 ssa(x,
     L = (N + 1) \%/\% 2,
+    neig = NULL,
+    mask = NULL,
+    wmask = NULL,
     \dots,
-    kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa"),
-    svd.method = c("nutrlan", "propack", "svd", "eigen"),
+    kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa", "mssa", "cssa"),
+    svd.method = c("auto", "nutrlan", "propack", "svd", "eigen"),
     force.decompose = TRUE)
 }
 
 \arguments{
-  \item{x}{object to be decomposed. Vector or time series object for 1d
-    SSA (or something which can be coerced to a vector), matrix-like
-    object for 2d SSA.}
+  \item{x}{object to be decomposed. See
+  \code{\link[Rssa:ssa-input]{ssa-input}} for more information}
   \item{L}{integer, window length. Fixed to half of the series length by
     default. Should be vector of length 2 for 2d SSA}
-  \item{\dots}{further arguments passed to
-    \code{\link[Rssa:decompose.ssa]{decompose}} (e.g. \code{neig}).}
-  \item{kind}{SSA method. This includes ordinary 1d SSA, 2d SSA and
-    Toeplitz variant of 1d SSA.}
+  \item{neig}{integer, number of desired eigentriples. If 'NULL', then
+    sane default value will be used, see 'Details'}
+  \item{mask}{for shaped 2d SSA case only. Logical matrix with same dimension as
+    \code{x}. Specifies form of decomposed array. If 'NULL', then all
+    non-NA elements will be used}
+  \item{wmask}{for shaped 2d SSA case only. Logical matrix which specifies window form.
+    See `Details' for more information about the window shape selection}
+  \item{\dots}{further arguments passed to \code{\link[Rssa:decompose.ssa]{decompose}} }
+  \item{kind}{SSA method. This includes ordinary 1d SSA, 2d SSA,
+    Toeplitz variant of 1d SSA, multichannel variant of SSA and complex
+    SSA}
   \item{svd.method}{singular value decomposition method. See 'Details'
     for more info.}
   \item{force.decompose}{logical, if 'TRUE' then the decomposition is
@@ -46,19 +55,37 @@ ssa(x,
   \subsection{Variants of SSA}{
     The following implementations of the SSA method are supported
     (corresponds to different values of \code{kind} argument):
-    \itemize{
-      \item Basic 1d SSA as described in Chapter 1 of (Golyandina et al,
-      2001). This is also known as Broomhead-King variant of SSA or
-      BK-SSA, see (Broomhead and King, 1986).
-      \item 2d SSA for decomposition of images and fields. See (Golyandina
-      and Usevich, 2009) for more information. The so-called M-SSA method
-      (aka multichannel SSA) is a special version of 2d SSA with window
-      length having one component set to one.
-      \item Toeplitz variant of 1d SSA. See Section 1.7.2 in (Golyandina
-      et al, 2001). This is also knows as Vatuard-Gill varian of SSA or
-      VG-SSA for analysis of stationary time series, see (Vautard and
-      Ghil, 1989).
+    \describe{
+      \item{1d-ssa}{Basic 1d SSA as described in Chapter 1 of (Golyandina et al,
+        2001). This is also known as Broomhead-King variant of SSA or
+        BK-SSA, see (Broomhead and King, 1986).}
+      \item{toeplitz-ssa}{Toeplitz variant of 1d SSA. See Section 1.7.2
+        in (Golyandina et al, 2001). This is also knows as Vatuard-Gill
+        variant of SSA or VG-SSA for analysis of stationary time series,
+        see (Vautard and Ghil, 1989).}
+      \item{mssa}{Multichannel SSA for simultaneous decomposition of
+        several time series (possible of unequal length). See
+        (Golyandina and Stepanov, 2005).}
+      \item{cssa}{Complex variant of 1d SSA.}
+      \item{2d-ssa}{2d SSA for decomposition of images and arrays. See
+        (Golyandina and Usevich, 2009) for more information.}
     }
+  }
+
+  \subsection{Window shape selection (for shaped 2d SSA)}{
+    Window shape may be specified by argument \code{wmask}. If \code{wmask} is 'NULL',
+    then standard rectangular window (specified by \code{L}) will be used.
+
+    Also in \code{wmask} one may use following functions:
+    \describe{
+      \item{circle(R)}{circular mask of radius \code{R}}
+      \item{triangle(side)}{mask in form of isosceles right-angled triangle with
+        cathetus \code{side}. Right angle lay on topleft corner of container square
+        matrix}
+    }
+    These functions are not exported, they defined only for \code{wmask} expression.
+    If one has objects with the same names and wants to use them rather than these functions,
+    one should use special wrapper function \code{I()} (see 'Examples'). 
   }
 
   \subsection{SVD methods}{
@@ -67,6 +94,9 @@ ssa(x,
     implementations of this procedure (corresponds to different values of
     \code{svd.method}) argument:
     \describe{
+      \item{auto}{Automatic method selection depending on the series length,
+        window length, SSA kind and number of eigenvalues
+        requested.}
       \item{nutrlan}{Thick-restart Lanczos eigensolver which operates on
         cross-product matrix. This methods exploits the Hankel structure of
         the trajectory matrix efficiently and is really fast. The method
@@ -111,7 +141,13 @@ ssa(x,
   Golyandina, N., Nekrutkin, V. and Zhigljavsky, A. (2001): \emph{Analysis of
     Time Series Structure: SSA and related techniques.} Chapman and
   Hall/CRC. ISBN 1584881941
- 
+
+  Golyandina, N. and Stepanov, D. (2005): \emph{SSA-based approaches to
+    analysis and forecast of multidimensional time series}. In
+    Proceedings of the 5th St.Petersburg Workshop on Simulation, June
+    26-July 2, 2005, St. Petersburg State University, St. Petersburg,
+    293--298. \url{http://www.gistatgroup.com/gus/mssa2.pdf}
+  
   Golyandina, N. and Usevich, K. (2009). \emph{2D-extensions of singular
   spectrum analysis: algorithm and elements of theory.} In Matrix
   Methods: Theory, Algorithms, Applications. World Scientific
@@ -119,11 +155,12 @@ ssa(x,
 
   Korobeynikov, A. (2010) \emph{Computation- and space-efficient
     implementation of SSA.} Statistics and Its Interface, Vol. 3, No. 3,
-    Pp. 257-268  
+    Pp. 257-268
 }
 \seealso{
   \code{\link[svd:svd]{svd}},
   \code{\link[Rssa:ssa-object]{ssa-object}},
+  \code{\link[Rssa:ssa-input]{ssa-input}},
   \code{\link[Rssa:decompose.ssa]{decompose}},
   \code{\link[Rssa:reconstruct]{reconstruct}},
   \code{\link[Rssa:plot]{plot}},
@@ -137,5 +174,55 @@ s <- ssa(co2)
 summary(s)
 # Reconstruct the series, with suitable grouping
 r <- reconstruct(s, groups = list(c(1, 4), c(2, 3), c(5, 6)))
+\donttest{
 plot(r)
+}
+
+# Decompose 'EuStockMarkets' series with default parameters
+s <- ssa(EuStockMarkets, kind = "mssa")
+r <- reconstruct(s, groups = list(Trend = 1:2))
+# Plot original series, trend and residuals superimposed
+\donttest{
+plot(r, plot.method = "xyplot", superpose = TRUE,
+     auto.key = list(columns = 3),
+     col = c("blue", "green", "red", "violet"),
+     lty = c(rep(1, 4), rep(2, 4), rep(3, 4)))
+}
+
+# Artificial image for 2dSSA
+mx <- outer(1:50, 1:50,
+            function(i, j) sin(2*pi * i/17) * cos(2*pi * j/7) + exp(i/25 - j/20)) +
+      rnorm(50^2, sd = 0.1)
+# Decompose 'mx' with circular window
+s <- ssa(mx, kind = "2d-ssa", wmask = circle(5), neig = 10)
+# Reconstruct
+r <- reconstruct(s, groups = list(1, 2:5))
+\donttest{
+# Plot components, original image and residuals
+plot(r)
+}
+
+# Real example: Mars photo
+data(Mars)
+# Decompose only Mars image (without backgroud)
+s <- ssa(Mars, mask = Mars != 0, wmask = circle(50), kind = "2d-ssa")
+\donttest{
+# Plot eigenarrays
+plot(s, type = "vectors", idx = 1:25)
+# Plot factor arrays
+plot(s, type = "vectors", vectors = "factor", idx = 1:25)
+# Reconstruct and plot trend
+plot(reconstruct(s, 1), fill.uncovered = "original")
+# Reconstruct and plot texture pattern
+plot(reconstruct(s, groups = list(c(13,14, 17, 18))))
+
+# I()-wrapper demo
+circle <- 50
+s <- ssa(Mars, wmask = circle(R = I(circle)))
+
+# CSSA-based trend extraction
+s <- ssa(EuStockMarkets[, 1] + 1.0i*EuStockMarkets[, 2], kind = "cssa")
+r <- reconstruct(s, groups = list(Trend = 1:2))
+plot(r)
+}
 }

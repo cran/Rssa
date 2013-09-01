@@ -19,19 +19,6 @@
 
 #   Routines for normal hankel SSA
 
-tcirc.old <- function(F, L = (N + 1) %/% 2) {
-  N <- length(F); K = N - L + 1
-  .res <- list()
-  .res$C <- as.vector(fft(c(F[K:N], F[1:(K-1)])))
-  .res$L <- L
-  return (.res)
-}
-
-hmatmul.old <- function(C, v) {
-  v <- as.vector(fft(C$C * fft(c(rev(v), rep(0, C$L-1))), inverse = TRUE))
-  Re((v/length(C$C))[1:C$L])
-}
-
 hankel <- function(X, L) {
   if (is.matrix(X) && nargs() == 1) {
      L <- nrow(X); K <- ncol(X); N <- K + L - 1
@@ -61,18 +48,21 @@ hankel <- function(X, L) {
                           fft.plan = .get.or.create.fft.plan(x)))
 }
 
-.hankelize.one.1d.ssa <- function(x, U, V) {
-  fft.plan <- .get.or.create.fft.plan(x)
+.hankelize.one.default <- function(U, V, fft.plan = NULL) {
+  L <- length(U); K <- length(V); N = K + L - 1
+  fft.plan <- (if (is.null(fft.plan)) fft.plan.1d(N) else fft.plan)
   storage.mode(U) <- storage.mode(V) <- "double"
   .Call("hankelize_one_fft", U, V, fft.plan)
 }
 
-.hankelize.multi <- function(U, V) {
+.hankelize.one.1d.ssa <- function(x, U, V, fft.plan = NULL) {
+  fft.plan <- (if (is.null(fft.plan)) .get.or.create.fft.plan(x) else fft.plan)
   storage.mode(U) <- storage.mode(V) <- "double"
-  .Call("hankelize_multi", U, V)
+  .Call("hankelize_one_fft", U, V, fft.plan)
 }
 
-.hankelize.multi.hankel <- function(U, V, fft.plan) {
+.hankelize.multi.default <- function(U, V, fft.plan) {
+  stopifnot(is.numeric(V))
   storage.mode(U) <- storage.mode(V) <- "double"
   .Call("hankelize_multi_fft", U, V, fft.plan)
 }
@@ -120,6 +110,10 @@ hmatmul <- function(hmat, v, transposed = FALSE) {
   x
 }
 
+.traj.dim.default <- function(x) {
+  c(x$window, x$length - x$window + 1)
+}
+
 decompose.1d.ssa <- function(x,
                              neig = min(50, L, K),
                              ...,
@@ -164,7 +158,9 @@ Lcov.matrix <- function(F,
   .Call("Lcov_matrix", F, L, if (is.null(fft.plan)) fft.plan.1d(N) else fft.plan)
 }
 
-decompose.1d.ssa.eigen <- function(x, ...,
+decompose.1d.ssa.eigen <- function(x,
+                                   neig = min(50, L, K),
+                                   ...,
                                    force.continue = FALSE) {
   N <- x$length; L <- x$window; K <- N - L + 1
 
@@ -183,8 +179,8 @@ decompose.1d.ssa.eigen <- function(x, ...,
   S$values[S$values < 0] <- 0
 
   # Save results
-  .set(x, "lambda", sqrt(S$values))
-  .set(x, "U", S$vectors)
+  .set(x, "lambda", sqrt(S$values[1:neig]))
+  .set(x, "U", S$vectors[, 1:neig, drop = FALSE])
 
   x
 }
@@ -233,7 +229,7 @@ decompose.1d.ssa.nutrlan <- function(x,
   x
 }
 
-calc.v.1d.ssa <- function(x, idx, env = .GlobalEnv, ...) {
+calc.v.1d.ssa <- function(x, idx, ...) {
   lambda <- .get(x, "lambda")[idx]
   U <- .get(x, "U")[, idx, drop = FALSE]
   h <- .get.or.create.hmat(x)
@@ -241,25 +237,3 @@ calc.v.1d.ssa <- function(x, idx, env = .GlobalEnv, ...) {
   invisible(sapply(1:length(idx),
                    function(i) hmatmul(h, U[, i], transposed = TRUE) / lambda[i]))
 }
-
-#mes <- function(N = 1000, L = (N %/% 2), n = 50) {
-#  F <- rnorm(N);
-#  v <- rnorm(N - L + 1);
-#  C <- tcirc.old(F, L = L);
-#  X <- hankel(F, L = L);
-#  h <- new.hmat(F, L = L);
-#  st1 <- system.time(for (i in 1:n) X %*% v);
-#  st2 <- system.time(for (i in 1:n) hmatmul.old(C, v));
-#  st3 <- system.time(for (i in 1:n) hmatmul(h, v));
-#  c(st1[["user.self"]], st2[["user.self"]], st3[["user.self"]]);
-#}
-
-
-#Rprof();
-#for (i in 1:250) {
-#  r1 <- X %*% v;
-#  r2 <- hmul(C, v);
-#}
-#Rprof(NULL);
-#print(max(abs(r1-r2)));
-#summaryRprof();

@@ -1,7 +1,0 @@
-.onAttach <- function(libname, pkgname) {
-  if (!0) {
-    packageStartupMessage('\nWARNING: ', pkgname, ' was compiled without FFTW support.')
-    packageStartupMessage('Some package features (e.g. 2D-SSA) will not be available.')
-    packageStartupMessage('The speed of the routines will be slower as well.')
-  }
-}

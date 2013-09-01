@@ -108,12 +108,137 @@
 }
 
 .get.series <- function(x, index) {
-  F <- numeric(prod(x$length));
-  for (i in index) {
-    name <- paste("series:", i, sep = "");
-    F <- F + .get(x, name);
+  name <- paste("series:", index[1], sep = "")
+  F <- .get(x, name)
+  for (i in index[-1]) {
+    name <- paste("series:", i, sep = "")
+    F <- F + .get(x, name)
   }
-  F;
+  F
+}
+
+.na.omit <- function(x, ...) {
+  # Drop initial and final NAs
+  good <- which(!is.na(x))
+  if (!length(good))
+    stop("all times contain an NA")
+
+  omit <- integer()
+  n <- length(x)
+  st <- min(good)
+  if (st > 1)
+    omit <- c(omit, 1L:(st-1))
+  en <- max(good)
+  if (en < n)
+    omit <- c(omit, (en+1):n)
+  cls <- attr(x, "class")
+  if (length(omit)) {
+    if ("ts" %in% cls) {
+      tm <- time(x)
+      xfreq <- frequency(x)
+    }
+    x <- x[st:en]
+    attr(omit, "class") <- "omit"
+    attr(x, "na.action") <- omit
+    if ("ts" %in% cls)
+      tsp(x) <- c(tm[st], tm[en], xfreq)
+    if (!is.null(cls)) class(x) <- cls
+  }
+
+  if (any(is.na(x)))
+    stop("time series contains internal NAs")
+
+  x
+}
+
+.to.series.list <- function(x, na.rm = TRUE) {
+  # Note that this will correctly remove leading and trailing NA, but will fail for internal NA's
+  NA.fun <- (if (na.rm) .na.omit else identity)
+  if (is.list(x)) {
+    res <- lapply(x, NA.fun)
+  } else {
+    # Coerce input to matrix. This will "normalize" cases like vector / data frame as input
+    if (!is.matrix(x))
+      x <- as.matrix(x)
+
+    res <- lapply(seq_len(ncol(x)), function(i) NA.fun(x[, i]))
+  }
+
+  class(res) <- "series.list"
+
+  res
+}
+
+.from.series.list <- function(x,
+                              pad = c("none", "left", "right"),
+                              simplify. = TRUE) {
+  pad <- match.arg(pad)
+
+  # First, get rid of "na.omit attribute"
+  res <- sapply(x,
+                function(x) {
+                  removed <- attr(x, "na.action")
+                  if (!is.null(removed) && length(removed) > 0) {
+                    res <- numeric(length(x) + length(removed))
+                    res[removed] <- NA
+                    res[-removed] <- x
+                    res
+                  } else
+                  x
+                },
+                simplify = (if (identical(pad, "none")) simplify. else FALSE))
+
+  # If no padding or further simplification is required, return
+  if (identical(pad, "none") || simplify. == FALSE)
+    return(res)
+
+  # Pad with NA's
+  if (any(sapply(res, is.ts))) {
+    do.call(ts.union, res)
+  } else {
+    ml <- max(sapply(res, length))
+    sapply(res,
+           function(x) {
+             l <- length(x)
+             if (identical(pad, "left"))
+               c(rep.int(NA, ml - l), x)
+             else
+               c(x, rep.int(NA, ml - l))
+           },
+           simplify = simplify.)
+  }
+}
+
+Ops.series.list <- function(e1, e2 = NULL) {
+  unary <- nargs() == 1L
+  lclass <- nzchar(.Method[1L])
+  rclass <- !unary && (nzchar(.Method[2L]))
+
+  FUN <- get(.Generic, envir = parent.frame(), mode = "function")
+
+  if (lclass && rclass) {
+    if (length(e1) != length(e2))
+      stop("series list should have equal number of elements")
+
+    res <- lapply(seq_len(length(e1)), function(i) FUN(e1[[i]], e2[[i]]))
+  } else if (lclass) {
+    res <- (if (unary) lapply(e1, FUN) else lapply(e1, function(x) FUN(x, e2)))
+  } else {
+    res <- (if (unary) lapply(e2, FUN) else lapply(e2, function(x) FUN(e1, x)))
+  }
+
+  class(res) <- "series.list"
+
+  res
+}
+
+# Formula-like interface
+.fiface.eval <- function(expr, envir = parent.frame(), ...) {
+  env <- as.environment(list(...))
+  parent.env(env) <- envir
+  env$I <- function(expr) eval(substitute(expr), envir = envir)
+
+  eval(expr, envir = env)
 }
 
 # Generics
@@ -132,10 +257,16 @@ wnorm <- function(x, ...)
 
 .hankelize.one <- function(x, ...)
   UseMethod(".hankelize.one")
+.hankelize.multi <- function(x, ...)
+  UseMethod(".hankelize.multi")
 .elseries <- function(x, ...)
   UseMethod(".elseries")
 .init <- function(x, ...)
   UseMethod(".init")
+.traj.dim <- function(x, ...)
+  UseMethod(".traj.dim")
+.apply.attributes <- function(x, ...)
+  UseMethod(".apply.attributes")
 
 # There is decompose() call in stats package, we need to take control over it
 decompose <- function(x, ...) UseMethod("decompose");

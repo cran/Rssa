@@ -17,20 +17,18 @@
 #   Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
 #   MA 02139, USA.
 
-fix.svd.method <- function(svd.method, L, N, ...) {
-  dots <- list(...)
-  neig <- dots$neig
+determine.svd.method <- function(L, K, neig = NULL, ..., svd.method = "nutrlan") {
   truncated <- (identical(svd.method, "nutrlan") || identical(svd.method, "propack"))
 
-  if (is.null(neig)) neig <- min(50, L, N - L + 1)
+  if (is.null(neig)) neig <- min(50, L, K)
   if (truncated) {
     # It's not wise to call truncated methods for small matrices at all
-    if (L < 50) {
+    if (L < 500) {
       truncated <- FALSE
       svd.method <- "eigen"
     } else if (neig > L /2) {
-    # Check, whether desired eigentriples amount is too huge
-      if (L < 200) {
+      # Check, whether desired eigentriples amount is too huge
+      if (L < 500) {
         svd.method <- "eigen"
         truncated <- FALSE
       } else {
@@ -49,32 +47,144 @@ new.ssa <- function(...) {
 
 ssa <- function(x,
                 L = (N + 1) %/% 2,
+                neig = NULL,
+                mask = NULL,
+                wmask = NULL,
                 ...,
-                kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa"),
-                svd.method = c("nutrlan", "propack", "svd", "eigen"),
+                kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa", "mssa", "cssa"),
+                svd.method = c("auto", "nutrlan", "propack", "svd", "eigen"),
                 force.decompose = TRUE) {
-  svd.method <- match.arg(svd.method);
-  kind <- match.arg(kind);
-  xattr <- attributes(x);
+  svd.method <- match.arg(svd.method)
+  kind <- match.arg(kind)
+  xattr <- attributes(x)
+  iattr <- NULL
+  # Grab class separately. This way we will capture the inherit class as well
+  xclass <- class(x)
 
+  # Do the fixups depending on the kind of SSA.
   if (identical(kind, "1d-ssa") || identical(kind, "toeplitz-ssa")) {
     # Coerce input to vector if necessary
     if (!is.vector(x))
-      x <- as.vector(x);
+      x <- as.vector(x)
 
-    N <- length(x);
+    N <- length(x)
+
+    if (is.null(neig))
+      neig <- min(50, L, N - L + 1)
 
     # Fix svd method, if needed
-    svd.method <- fix.svd.method(svd.method, L, N, ...)
+    if (identical(svd.method, "auto"))
+      svd.method <- determine.svd.method(L, N - L + 1, neig, ...)
+
+    wmask <- fmask <- weights <- NULL
   } else if (identical(kind, "2d-ssa")) {
     # Coerce input to matrix if necessary
     if (!is.matrix(x))
-      x <- as.matrix(x);
+      x <- as.matrix(x)
 
     N <- dim(x);
-  }
 
-  # Normalized the kind to be used
+    if (is.null(mask)) {
+      mask <- !is.na(x)
+    } else {
+      mask <- mask & !is.na(x)
+    }
+
+    wmask <- .fiface.eval(substitute(wmask),
+                          envir = parent.frame(),
+                          circle = circle.mask,
+                          triangle = triangle.mask)
+    if (is.null(wmask)) {
+      wmask <- matrix(TRUE, L[1], L[2])
+    } else {
+      L <- dim(wmask)
+    }
+
+    if (is.null(neig))
+      neig <- min(50, prod(L), prod(N - L + 1))
+
+    # Fix SVD method.
+    if (identical(svd.method, "auto"))
+      svd.method <- determine.svd.method(prod(L), prod(N - L + 1), neig, ..., svd.method = "nutrlan")
+
+    fmask <- factor.mask(mask, wmask)
+
+    if (!all(wmask) || !all(fmask)) {
+      weights <- field.weights(wmask, fmask)
+
+      ommited <- sum(mask & (weights == 0))
+      if (ommited > 0) {
+        warning(sprintf("Some field elements were not covered by shaped window. %d elements will be ommited", ommited))
+      }
+
+      if (all(weights == 0)) {
+        stop("Nothing to decompose: the given field shape is empty")
+      }
+    } else {
+      weights <- NULL
+    }
+
+    if (all(wmask))
+      wmask <- NULL
+    if (all(fmask))
+      fmask <- NULL
+  } else if (identical(kind, "mssa")) {
+    # We assume that we have mts-like object. With series in the columns.
+    # Coerce input to series.list object
+    # Note that this will correctly remove leading and trailing NA's
+    x <- .to.series.list(x, na.rm = TRUE)
+    # Grab the inner attributes, if any
+    iattr <- lapply(x, attributes)
+
+    N <- sapply(x, length)
+
+    # If L is provided it should be length 1
+    if (missing(L)) {
+      L <- (min(N) + 1) %/% 2
+    } else {
+      if (length(L) > 1)
+        warning("length of L is > 1, only the first element will be used")
+      L <- L[1]
+    }
+
+    if (is.null(neig))
+      neig <- min(50, L, sum(N - L + 1))
+
+    # Fix SVD method.
+    if (identical(svd.method, "auto"))
+      svd.method <- determine.svd.method(L, sum(N - L + 1), neig, ...)
+
+    wmask <- NULL
+    if (!all(N == max(N))) {
+      K <- N - L + 1
+
+      weights <- matrix(0, max(N), length(N))
+      fmask <- matrix(FALSE, max(K), length(N))
+      for (idx in seq_along(N)) {
+        weights[seq_len(N[idx]), idx] <- .hweights.default(N[idx], L)
+        fmask[seq_len(K[idx]), idx] <- TRUE
+      }
+    } else {
+      fmask <- weights <- NULL
+    }
+  } else if (identical(kind, "cssa")) {
+    # Sanity check - the input series should be complex
+    if (!is.complex(x))
+      stop("complex SSA should be performed on complex time series")
+    N <- length(x)
+
+    if (is.null(neig))
+      neig <- min(50, L, N - L + 1)
+
+    # Fix SVD method.
+    if (identical(svd.method, "auto"))
+      svd.method <- determine.svd.method(L, N - L + 1, neig, ..., svd.method = "eigen")
+
+    wmask <- fmask <- weights <- NULL
+  }
+  stopifnot(!is.null(neig))
+
+  # Normalize the kind to be used
   kind <- sub("-", ".", kind, fixed = TRUE)
 
   # Create information body
@@ -83,7 +193,7 @@ ssa <- function(x,
                call = match.call(),
                kind = kind,
                series = deparse(substitute(x)),
-               svd.method = svd.method);
+               svd.method = svd.method)
 
   # Create data storage
   this <- .create.storage(this);
@@ -91,8 +201,15 @@ ssa <- function(x,
   # Save series
   .set(this, "F", x);
 
+  # Save masks and weights
+  .set(this, "wmask", wmask)
+  .set(this, "fmask", fmask)
+  .set(this, "weights", weights)
+
   # Save attributes
-  .set(this, "Fattr", xattr);
+  .set(this, "Fattr", xattr)
+  .set(this, "Fclass", xclass)
+  .set(this, "Iattr", iattr)
 
   # Make this S3 object
   class(this) <- c(paste(kind, svd.method, sep = "."), kind, "ssa");
@@ -102,7 +219,7 @@ ssa <- function(x,
 
   # Decompose, if necessary
   if (force.decompose)
-    this <- decompose(this, ...);
+    this <- decompose(this, neig = neig, ...);
 
   this;
 }
@@ -120,12 +237,12 @@ ssa <- function(x,
   desired <- max(unlist(groups))
 
   # Sanity check
-  if (desired > min(prod(L), prod(K)))
+  if (desired > min(.traj.dim(x)))
     stop("Cannot decompose that much, desired elementary series index is too huge")
 
   # Continue decomposition, if necessary
   if (desired > min(nlambda(x), nu(x)))
-    decompose(x, ..., neig = min(desired + 1, prod(L), prod(K)))
+    decompose(x, ..., neig = min(desired + 1, min(.traj.dim(x))))
 
   desired
 }
@@ -141,23 +258,43 @@ precache <- function(x, n, ...) {
   info <- .get.series.info(x);
   new <- setdiff(1:n, info);
 
-  # Hack-hack-hack! Some routines will work much more efficiently if we'll
-  # pass space to store some data which is needed to be calculated only once.
-  e <- new.env();
-
   for (idx in new) {
     # Do actual reconstruction (depending on method, etc)
     .set.series(x,
-                .elseries(x, idx, env = e), idx);
+                .elseries(x, idx), idx);
   }
-
-  # Cleanup
-  rm(list = ls(envir = e, all.names = TRUE),
-     envir = e, inherits = FALSE);
 }
 
 cleanup <- function(x) {
   .remove(x, ls(.storage(x), pattern = "series:"));
+}
+
+.apply.attributes.default <- function(x, F,
+                                      fixup = FALSE,
+                                      only.new = TRUE, drop = FALSE) {
+  a <- (if (drop) NULL else .get(x, "Fattr"))
+  cls <- (if (drop) NULL else .get(x, "Fclass"))
+
+  if (fixup) {
+     # Try to guess the indices of known time series classes
+    if ("ts" %in% cls) {
+      tsp <- a$tsp
+      return (ts(F,
+                 start = if (only.new) tsp[2] + 1/tsp[3] else tsp[1],
+                 frequency = tsp[3]))
+    }
+  } else {
+    attributes(F) <- a
+  }
+
+  F
+}
+
+.group.names <- function(groups) {
+  group.names <- names(groups)
+  if (is.null(group.names)) group.names <- rep("", length(groups))
+
+  ifelse(group.names != "", group.names, paste0("F", seq_along(groups)))
 }
 
 reconstruct.ssa <- function(x, groups, ...,
@@ -173,10 +310,6 @@ reconstruct.ssa <- function(x, groups, ...,
   # Grab indices of pre-cached values
   info <- .get.series.info(x);
 
-  # Hack-hack-hack! Some routines will work much more efficiently if we'll
-  # pass space to store some data which is needed to be calculated only once.
-  e <- new.env();
-
   # Do actual reconstruction. Calculate the residuals on the way
   residuals <- .get(x, "F")
   for (i in seq_along(groups)) {
@@ -184,27 +317,29 @@ reconstruct.ssa <- function(x, groups, ...,
     new <- setdiff(group, info);
     cached <- intersect(group, info);
 
-    if (length(new) == 0) {
-      # Nothing to compute, just create zero output
-      out[[i]] <- numeric(prod(x$length));
-    } else {
+    if (length(new)) {
       # Do actual reconstruction (depending on method, etc)
-      out[[i]] <- .elseries(x, new, env = e);
+      out[[i]] <- .elseries(x, new);
 
       # Cache the reconstructed series, if this was requested
       if (cache && length(new) == 1)
         .set.series(x, out[[i]], new);
+
+       # Add pre-cached series
+      if (length(cached))
+        out[[i]] <- out[[i]] + .get.series(x, cached);
+    } else if (length(cached)) {
+      out[[i]] <- .get.series(x, cached)
+    } else {
+      stop("group cannot be empty")
     }
 
-    # Add pre-cached series
-    out[[i]] <- out[[i]] + .get.series(x, cached);
-
     # Propagate attributes (e.g. dimension for 2d-SSA)
-    attributes(out[[i]]) <- .get(x, "Fattr");
+    out[[i]] <- .apply.attributes(x, out[[i]], fixup = FALSE, drop = drop.attributes)
   }
 
-  # Set names and drop the dimension, if necessary
-  names(out) <- paste("F", 1:length(groups), sep="");
+  # Set names
+  names(out) <- .group.names(groups)
 
   # Calculate the residuals
   residuals <- .get(x, "F")
@@ -212,19 +347,14 @@ reconstruct.ssa <- function(x, groups, ...,
   info <- .get.series.info(x);
   rcached <- intersect(rgroups, info)
   rnew <- setdiff(rgroups, info)
-  residuals <- residuals - .get.series(x, rcached)
+  if (length(rcached))
+    residuals <- residuals - .get.series(x, rcached)
   if (length(rnew))
-    residuals <- residuals - .elseries(x, rnew, env = e)
+    residuals <- residuals - .elseries(x, rnew)
 
   # Propagate attributes of residuals
-  attributes(residuals) <- .get(x, "Fattr");
-  F <- .get(x, "F")
-  if (!drop.attributes)
-    attributes(F) <- .get(x, "Fattr")
-
-  # Cleanup
-  rm(list = ls(envir = e, all.names = TRUE),
-     envir = e, inherits = FALSE);
+  residuals <- .apply.attributes(x, residuals, fixup = FALSE, drop = drop.attributes)
+  F <- .apply.attributes(x, .get(x, "F"), fixup = FALSE, drop = drop.attributes)
 
   attr(out, "residuals") <- residuals;
   attr(out, "series") <- F;
@@ -244,7 +374,7 @@ residuals.ssa.reconstruction <- function(object, ...) {
   attr(object, "residuals")
 }
 
-.elseries.default <- function(x, idx, ..., env = .GlobalEnv) {
+.elseries.default <- function(x, idx, ...) {
   if (max(idx) > nlambda(x))
     stop("Too few eigentriples computed for this decomposition")
 
@@ -252,7 +382,6 @@ residuals.ssa.reconstruction <- function(object, ...) {
   U <- .get(x, "U");
 
   res <- numeric(prod(x$length));
-
   for (i in idx) {
     if (nv(x) >= i) {
       # FIXME: Check, whether we have factor vectors for reconstruction
@@ -260,7 +389,7 @@ residuals.ssa.reconstruction <- function(object, ...) {
       V <- .get(x, "V")[, i];
     } else {
       # No factor vectors available. Calculate them on-fly.
-      V <- calc.v(x, i, env = env);
+      V <- calc.v(x, i);
     }
 
     res <- res + lambda[i] * .hankelize.one(x, U = U[, i], V = V);
@@ -331,8 +460,9 @@ clusterify.ssa <- function(x, group, nclust = length(group) / 2,
 }
 
 print.ssa <- function(x, digits = max(3, getOption("digits") - 3), ...) {
+  clp <- (if (length(x$window) > 1) " x " else ", ")
   cat("\nCall:\n", deparse(x$call), "\n\n", sep="");
-  cat("Series length:", paste(x$length, collapse = " x "));
+  cat("Series length:", paste(x$length, collapse = clp));
   cat(",\tWindow length:", paste(x$window, collapse = " x "));
   cat(",\tSVD method:", x$svd.method);
   cat("\n\nComputed:\n");

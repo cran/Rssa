@@ -19,12 +19,12 @@
 #   MA 02139, USA.
 
 lrr.default <- function(U, eps = sqrt(.Machine$double.eps), ...) {
-  N <- nrow(U);
-  lpf <- U %*% t(U[N, , drop = FALSE]);
+  N <- nrow(U)
+  lpf <- Conj(U) %*% t(U[N, , drop = FALSE])
 
   divider <- 1 - lpf[N]
-  if (divider < eps)
-    stop("Verticality coefficient equals to 1");
+  if (Mod(divider) < eps)
+    stop("Verticality coefficient equals to 1")
 
   lpf[-N] / divider
 }
@@ -47,6 +47,7 @@ lrr.1d.ssa <- function(x, groups, ..., drop = TRUE) {
     out[[i]] <- res
   }
 
+  names(out) <- .group.names(groups)
   if (length(out) == 1 && drop)
     out <- out[[1]]
 
@@ -74,24 +75,6 @@ roots.lrr <- function(x, ..., method = c("companion", "polyroot")) {
   res[order(abs(res), decreasing = TRUE)]
 }
 
-plot.lrr <- function(x, ..., raw = FALSE) {
-  r <- roots(x)
-  if (raw) {
-    plot(r, ...)
-  } else {
-    xlim <- range(c(Re(r), +1, -1))
-    ylim <- range(c(Im(r), +1, -1))
-
-    plot(r, ...,
-         xlim = xlim, ylim = ylim,
-         main = "Roots of Linear Recurrence Formula",
-         xlab = "Real Part",
-         ylab = "Imaginary Part",
-         asp = 1)
-    symbols(0, 0, circles = 1, add = TRUE, inches = FALSE)
-  }
-}
-
 apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
   N <- length(F)
   r <- length(lrr)
@@ -109,32 +92,12 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
 }
 
 
-maybe.fixup.attributes <- function(x, v,
-                                   only.new = TRUE, drop = FALSE) {
-  # Grab the initial set of attributes
-  res <- attributes(v)
-  # Reconstruct the original series
-  F <- .get(x, "F")
-  if (!drop)
-    attributes(F) <- .get(x, "Fattr")
-
-  # Try to guess the indices of known time series classes
-  if (is.ts(F)) {
-    return (ts(v,
-               start = if (only.new) tsp(F)[2] + 1/frequency(F) else start(F),
-               frequency = frequency(F)))
-  }
-
-  return(v)
-}
-
 rforecast.1d.ssa <- function(x, groups, len = 1,
                              base = c("reconstructed", "original"),
                              only.new = TRUE,
                              ...,
                              drop = TRUE, drop.attributes = FALSE, cache = TRUE) {
   L <- x$window
-  K <- x$length - L + 1
 
   base <- match.arg(base)
   if (missing(groups))
@@ -155,10 +118,113 @@ rforecast.1d.ssa <- function(x, groups, len = 1,
     # Calculate the forecasted values
     out[[i]] <- apply.lrr(if (identical(base, "reconstructed")) r[[i]] else .get(x, "F"),
                           lf[[i]], len, only.new = only.new)
-    out[[i]] <- maybe.fixup.attributes(x, out[[i]], only.new = only.new, drop = drop.attributes)
+    out[[i]] <- .apply.attributes(x, out[[i]],
+                                  fixup = TRUE,
+                                  only.new = only.new, drop = drop.attributes)
   }
 
-  names(out) <- paste(sep = "", "F", 1:length(groups))
+  names(out) <- .group.names(groups)
+  if (length(out) == 1 && drop)
+    out <- out[[1]]
+
+  # Forecasted series can be pretty huge...
+  invisible(out)
+}
+
+.na.bind <- function(original, new,
+                     update.method = c("append", "replace")) {
+  update.method <- match.arg(update.method)
+
+  removed <- attr(original, "na.action")
+
+  res <- switch(update.method,
+                append = c(original, new),
+                replace = new)
+
+  if (!is.null(removed)) {
+    all.old <- seq_len(length(removed) + length(original))
+    full.old <- setdiff(all.old, removed)
+    full.new <- c(full.old, max(full.old) + seq_len(length(res) - length(original)))
+    res.na <- setdiff(all.old, full.new)
+    attr(res, "na.action") <- if (length(res.na) > 0) res.na else NULL
+  }
+
+  res
+}
+
+rforecast.mssa <- function(x, groups, len = 1,
+                           base = c("reconstructed", "original"),
+                           direction = c("row", "column"),
+                           only.new = TRUE,
+                           ...,
+                           drop = TRUE, drop.attributes = FALSE, cache = TRUE) {
+  L <- x$window; N <- x$length; K <- N - L + 1
+
+  cK <- cumsum(K)
+  cKr <- cumsum(K - 1)
+  cKl <- cKr - (K - 1) + 1
+
+  base <- match.arg(base)
+  direction <- match.arg(direction)
+  if (missing(groups))
+    groups <- as.list(1:min(nlambda(x), nu(x)))
+
+  # Grab the reconstructed series if we're basing on them
+  if (identical(base, "reconstructed"))
+    r <- reconstruct(x, groups = groups, ..., cache = cache)
+
+  out <- list()
+  for (i in seq_along(groups)) {
+    group <- groups[[i]]
+
+    F <- if (identical(base, "reconstructed")) .to.series.list(r[[i]]) else .get(x, "F")
+
+    # Calculate the forecasted values
+    if (identical(direction, "column")) {
+      # Calculate the LRR corresponding to group
+      lf <- lrr(x, groups = list(group), drop = FALSE)
+      stopifnot(length(lf) == 1)
+      R <- matrix(NA, nrow = len, ncol = length(N))
+      R[] <- sapply(F,
+                    apply.lrr,
+                    lrr = lf[[1]], len = len, only.new = TRUE)
+    } else {
+      V <- calc.v(x, idx = group)
+
+      # Build W
+      W <- V[cK,, drop = FALSE]
+      # Build Q
+      Q <- V[-cK,, drop = FALSE]
+
+      # Calculate the forecasted values
+      qIWWt <- qr(diag(length(N)) - tcrossprod(W))
+      WtQ <- W %*% t(Q)
+
+      R <- matrix(NA, nrow = len, ncol = length(N))
+      # Build initial Z
+      Z <- unlist(lapply(seq_along(F), function(idx) F[[idx]][seq(to = N[[idx]], length.out = K[[idx]] -1)]))
+      for (idx in seq_len(len)) {
+        # Calculate the projection
+        cR <- t(qr.coef(qIWWt, WtQ %*% Z))
+        R[idx, ] <- cR
+
+        # Shift the Z vector
+        Z[-cKr] <- Z[-cKl]
+        Z[cKr] <- cR
+      }
+    }
+
+    out[[i]] <- if (only.new) .to.series.list(R) else {
+      res <- lapply(seq_along(F), function(idx) .na.bind(F[[idx]], R[, idx], update.method = "append"))
+      class(res) <- "series.list"
+      res
+    }
+    out[[i]] <- .apply.attributes(x, out[[i]],
+                                  fixup = TRUE,
+                                  only.new = only.new, drop = drop.attributes)
+  }
+
+  names(out) <- .group.names(groups)
   if (length(out) == 1 && drop)
     out <- out[[1]]
 
@@ -201,21 +267,123 @@ vforecast.1d.ssa <- function(x, groups, len = 1,
     U.head <- Uet[-L, , drop = FALSE]
     U.tail <- Uet[-1, , drop = FALSE]
     Pi <- Uet[L, ]
-    tUhUt <- t(U.head) %*% U.tail
-    P <- tUhUt + 1 / (1 - sum(Pi^2)) * Pi %*% (t(Pi) %*% tUhUt)
+    tUhUt <- t(U.head) %*% Conj(U.tail)
+    P <- tUhUt + 1 / (1 - sum(abs(Pi)^2)) * Pi %*% (t(Conj(Pi)) %*% tUhUt)
 
     for (j in (K + 1):(K + len + L - 1)) {
       Z[j, ] <- P %*% Z[j - 1, ]
     }
 
-    res <- rowSums(.hankelize.multi.hankel(Uet, Z, fft.plan))
+    res <- rowSums(.hankelize.multi(Uet, Z, fft.plan))
 
     out[[i]] <- res[(if (only.new) (K+L):N.res else 1:N.res)]
-    out[[i]] <- maybe.fixup.attributes(x, out[[i]], only.new = only.new, drop = drop.attributes)
+    out[[i]] <- .apply.attributes(x, out[[i]],
+                                  fixup = TRUE,
+                                  only.new = only.new, drop = drop.attributes)
   }
 
-  names(out) <- paste(sep = "", "F", 1:length(groups))
+  names(out) <- .group.names(groups)
+  if (length(out) == 1 && drop)
+    out <- out[[1]]
 
+  # Forecasted series can be pretty huge...
+  invisible(out)
+}
+
+vforecast.mssa <- function(x, groups, len = 1,
+                           direction = c("row", "column"),
+                           only.new = TRUE,
+                           ...,
+                           drop = TRUE, drop.attributes = FALSE) {
+  direction <- match.arg(direction)
+  if (missing(groups))
+    groups <- as.list(1:min(nlambda(x), nu(x)))
+
+  # Continue decomposition, if necessary
+  desired <- .maybe.continue(x, groups = groups, ...)
+
+  F <- .get(x, "F")
+
+  lambda <- .get(x, "lambda")
+  U <- .get(x, "U")
+
+  V <- if (nv(x) >= desired) .get(x, "V") else NULL
+
+  L <- x$window
+  K <- x$length - L + 1
+  N.res <- K + L - 1 + len
+  N <- N.res + switch(direction, column = L, row = K) - 1
+
+  # Grab the FFT plan
+  fft.plan <- lapply(N, fft.plan.1d)
+
+  cK <- cumsum(K)
+  cKs <- cK - K + 1
+
+  out <- list()
+
+  for (i in seq_along(groups)) {
+    group <- unique(groups[[i]])
+
+    Uet <- U[, group, drop = FALSE]
+    Vet <- if (is.null(V)) calc.v(x, idx = group) else V[, group, drop = FALSE]
+
+    if (identical(direction, "column")) {
+      U.head <- Uet[-L, , drop = FALSE]
+      U.tail <- Uet[-1, , drop = FALSE]
+      Pi <- Uet[L, ]
+      tUhUt <- crossprod(U.head, U.tail)
+      P <- tUhUt + 1 / (1 - sum(Pi^2)) * Pi %*% (t(Pi) %*% tUhUt)
+
+      R <- lapply(seq_along(N), function(idx) {
+          Z <- rbind(t(lambda[group] * t(Vet[cKs[idx] : cK[idx], , drop = FALSE])), matrix(NA, len + L - 1, length(group)))
+
+          for (j in (K[idx] + 1) : (K[idx] + len + L - 1)) {
+            Z[j, ] <- P %*% Z[j - 1, ]
+          }
+
+          rowSums(.hankelize.multi(Uet,
+                                   Z,
+                                   fft.plan[[idx]]))
+        })
+    } else if (identical(direction, "row")) {
+      V.head <- Vet[-cK, , drop = FALSE]
+      V.tail <- Vet[-cKs, , drop = FALSE]
+      Pi <- Vet[cK, , drop = FALSE]
+      tVhVt <- crossprod(V.head, V.tail)
+      P <- tVhVt + t(Pi) %*% (solve(diag(length(N)) - tcrossprod(Pi), Pi) %*% tVhVt)
+
+      Z <- rbind(t(lambda[group] * t(Uet)), matrix(NA, len + max(K) - 1, length(group)))
+
+      for (j in (L + 1) : (L + len + max(K) - 1)) {
+        Z[j, ] <- P %*% Z[j - 1, ]
+      }
+
+      R <- lapply(seq_along(N), function(idx) {
+          rowSums(.hankelize.multi(Z[1 : (L + len + K[idx] - 1), , drop = FALSE],
+                                   Vet[cKs[idx] : cK[idx], , drop = FALSE],
+                                   fft.plan[[idx]]))
+        })
+    }
+
+    out[[i]] <- if (only.new) {
+      .to.series.list(lapply(seq_along(N), function(idx) R[[idx]][seq(to = N.res[idx], length.out = len)]))
+    } else {
+      for (idx in seq_along(N)) {
+        length(R[[idx]]) <- N.res[idx]
+        R[[idx]] <- .na.bind(F[[idx]], R[[idx]], update.method = "replace")
+      }
+
+      class(R) <- "series.list"
+      R
+    }
+    out[[i]] <- .apply.attributes(x, out[[i]],
+                                  fixup = TRUE,
+                                  only.new = only.new, drop = drop.attributes)
+
+  }
+
+  names(out) <- .group.names(groups)
   if (length(out) == 1 && drop)
     out <- out[[1]]
 
@@ -246,6 +414,7 @@ bforecast.1d.ssa <- function(x, groups,
       s <- clone(base, copy.cache = FALSE, copy.storage = FALSE)
       .set(s, "F", F)
       .set(s, "Fattr", attributes(F))
+      .set(s, "Fclass", class(F))
       do.call(forecast.fun,
               c(list(s,
                      groups = list(group), len = len, drop = TRUE, only.new = TRUE),
@@ -259,10 +428,11 @@ bforecast.1d.ssa <- function(x, groups,
 
     # Finally, calculate the statistics of interest
     cf <- apply(bF, 1, quantile, probs = c((1-level) / 2, (1 + level) / 2))
-    out[[i]] <- maybe.fixup.attributes(x, cbind(Value = rowMeans(bF), t(cf)), drop = drop.attributes)
+    out[[i]] <- .apply.attributes(x, cbind(Value = rowMeans(bF), t(cf)),
+                                  fixup = TRUE, drop = drop.attributes)
   }
 
-  names(out) <- paste(sep = "", "F", 1:length(groups))
+  names(out) <- .group.names(groups)
   if (length(out) == 1 && drop)
     out <- out[[1]]
 
@@ -297,7 +467,6 @@ forecast.1d.ssa <- function(object,
   f <- do.call(predict, c(list(object, groups = groups, len = len, method = method, drop = drop, drop.attributes = drop.attributes, cache = cache), dots))
 
   # Now perform a "cast" to forecast object
-  require(forecast)
   F <- .get(object, "F")
   if (!drop.attributes)
     attributes(F) <- .get(object, "Fattr")
@@ -344,6 +513,12 @@ forecast.1d.ssa <- function(object,
 "bforecast.toeplitz.ssa" <- `bforecast.1d.ssa`;
 "forecast.toeplitz.ssa" <- `forecast.1d.ssa`;
 "predict.toeplitz.ssa" <- `predict.1d.ssa`;
+
+"lrr.mssa" <- `lrr.1d.ssa`
+
+"lrr.cssa" <- `lrr.1d.ssa`
+"rforecast.cssa" <- `rforecast.1d.ssa`;
+"vforecast.cssa" <- `vforecast.1d.ssa`;
 
 lrr <- function(x, ...)
   UseMethod("lrr")

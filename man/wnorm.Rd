@@ -1,16 +1,20 @@
 \name{wnorm}
 \alias{wnorm}
 \alias{wnorm.1d.ssa}
+\alias{wnorm.2d.ssa}
 \alias{wnorm.toeplitz.ssa}
+\alias{wnorm.mssa}
 \alias{wnorm.default}
 
-\title{Calculate weighted norm of series}
+\title{Calculate Weighted Norm of series}
 \description{
-  Function calculates the W-norm for input series or for series stored in input ssa obect.
+  Function calculates the W-norm for input objects or for objects stored in input ssa obect.
 }
 \usage{
 \method{wnorm}{1d.ssa}(x, ...)
+\method{wnorm}{2d.ssa}(x, ...)
 \method{wnorm}{toeplitz.ssa}(x, ...)
+\method{wnorm}{mssa}(x, ...)
 \method{wnorm}{default}(x, L = (N + 1) \%/\% 2, ...)
 }
 
@@ -22,12 +26,17 @@
 }
 
 \details{
-  \code{L}-weighted norm of series is Frobenius norm of its \code{L}-trajectory matrix. So,
-  if \code{x} is vector (series), the result of \code{wnorm(x, L)} is equal to \code{sqrt(sum(hankel(x, L)^2)}, but
-  would be evaluated much more efficiently.
-  For 1d SSA and Toeplitz SSA \code{wnorm(x)} calculates weighted norm for stored original input series and stored window length.
+  \code{L}-weighted norm of series is Frobenius norm of its
+  \code{L}-trajectory matrix. So, if \code{x} is vector (series), the
+  result of \code{wnorm(x, L)} is equal to \code{sqrt(sum(hankel(x,
+  L)^2)}, but in fact is calculated much more efficiently. For 1d SSA and
+  Toeplitz SSA \code{wnorm(x)} calculates weighted norm for stored
+  original input series and stored window length.
 
-  For 2d SSA this method is not implemented yet.
+  \code{L}-weighted norm of 2d array is Frobenius norm of its \code{L[1]
+  * L[2]}-trajectory hankel-block-hankel matrix.  For 2d SSA this method
+  calculates weighted norm for stored original input array and stored
+  2d-window lengths.
 }
 
 \references{
@@ -37,12 +46,24 @@
 }
 
 \seealso{
-  \code{\link[Rssa:hankel]{hankel}}
-  \code{\link[Rssa:wcor.ssa]{wcor}}
+  \code{\link[Rssa:ssa-input]{ssa-input}},
+  \code{\link[Rssa:hankel]{hankel}},
+  \code{\link[Rssa:wcor]{wcor}}
 }
 
 \examples{
 wnorm(co2, 20)
-ss <- ssa(co2)
+# Construct ssa-object for 'co2' with default parameters but don't decompose
+ss <- ssa(co2, force.decompose = FALSE)
 wnorm(ss)
+
+# Artificial image for 2D SSA
+\donttest{
+mx <- outer(1:50, 1:50,
+            function(i, j) sin(2*pi * i/17) * cos(2*pi * j/7) + exp(i/25 - j/20)) +
+      rnorm(50^2, sd = 0.1)
+# Construct ssa-object for 'mx' with default parameters but don't decompose
+s <- ssa(mx, kind = "2d-ssa", force.decompose = FALSE)
+wnorm(s)
+}
 }

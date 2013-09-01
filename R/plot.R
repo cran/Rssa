@@ -47,6 +47,33 @@ panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   panel.xyplot(U, V, ...)
 }
 
+prepanel.factorvectors <- function(x, y, ssaobj, symmetric = FALSE) {
+  V <- if (y <= nv(ssaobj)) ssaobj$U[, y] else calc.v(ssaobj, idx = y)
+  U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$U[, x] else calc.v(ssaobj, idx = x)
+
+  res <- prepanel.default.xyplot(U, V)
+  if (symmetric) {
+    res$ylim <- range(V, -V)
+    if (!identical(x, y))
+      res$xlim <- range(U, -U)
+  }
+
+  res
+}
+
+panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
+  V <- if (y <= nv(ssaobj)) ssaobj$U[, y] else calc.v(ssaobj, idx = y)
+  U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$U[, x] else calc.v(ssaobj, idx = x)
+
+  if (ref) {
+    panel.abline(h = 0, ..., reference = TRUE)
+    if (!identical(x, y))
+      panel.abline(v = 0, ..., reference = TRUE)
+  }
+
+  panel.xyplot(U, V, ...)
+}
+
 .defaults <- function(x, ...) {
   dots <- list(...)
   modifyList(dots, x)
@@ -62,15 +89,14 @@ panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   dots <- .defaults(dots,
                     type = plot.type,
                     xlab =  "Index",
-                    ylab = "log of eigenvalue",
-                    main = "Eigenvalues",
+                    ylab = "log of singular value",
+                    main = "Singular Values",
                     grid = TRUE,
                     scales = list(y = list(log = TRUE)),
                     par.settings = list(plot.symbol = list(pch = 20)))
 
-  res <- do.call("xyplot",
-                 c(list(x = B ~ A , data = d, ssaobj = x), dots))
-  print(res)
+  do.call("xyplot",
+          c(list(x = B ~ A , data = d, ssaobj = x), dots))
 }
 
 .plot.ssa.vectors <- function(x, ...)
@@ -79,8 +105,11 @@ panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
 .plot.ssa.vectors.ssa <- function(x, ...)
   stop("`.plot.ssa.vectors' is not implemented for this kind of SSA")
 
-.plot.ssa.vectors.1d.ssa <- function(x, ..., plot.contrib, idx, plot.type = "l") {
+.plot.ssa.vectors.1d.ssa <- function(x, ...,
+                                     what = c("eigen", "factor"),
+                                     plot.contrib, idx, plot.type = "l") {
   dots <- list(...)
+  what <- match.arg(what)
 
   # FIXME: check for proper lengths
   d <- data.frame(A = idx, B = idx)
@@ -95,27 +124,29 @@ panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
                     type = plot.type,
                     xlab = "",
                     ylab =  "",
-                    main = "Eigenvectors",
+                    main = if (identical(what, "eigen")) "Eigenvectors" else "Factor vectors",
                     as.table = TRUE,
                     scales = list(draw = FALSE, relation = "free"),
                     aspect = 1,
                     symmetric = TRUE,
                     ref = TRUE)
 
-  res <- do.call("xyplot",
-                 c(list(x = A ~ B | factor(A,
-                                           labels = if (!plot.contrib) A else paste(A, " (", lambda, "%)", sep = "")),
-                        data = d, ssaobj = x,
-                        panel = panel.eigenvectors,
-                        prepanel = prepanel.eigenvectors),
-                   dots))
-  print(res)
+  do.call("xyplot",
+          c(list(x = A ~ B | factor(A,
+                   labels = if (!plot.contrib) A else paste(A, " (", lambda, "%)", sep = "")),
+                 data = d, ssaobj = x,
+                 panel = if (identical(what, "eigen")) panel.eigenvectors else panel.factorvectors,
+                 prepanel = if (identical(what, "eigen")) prepanel.eigenvectors else prepanel.factorvectors),
+            dots))
 }
 
 .plot.ssa.vectors.toeplitz.ssa <- `.plot.ssa.vectors.1d.ssa`
 
-.plot.ssa.paired <- function(x, ..., plot.contrib, idx, idy, plot.type = "l") {
+.plot.ssa.paired <- function(x, ...,
+                             what = c("eigen", "factor"),
+                             plot.contrib, idx, idy, plot.type = "l") {
   dots <- list(...)
+  what <- match.arg(what)
 
   # FIXME: check for proper lengths
   d <- data.frame(A = idx, B = idy)
@@ -131,22 +162,21 @@ panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
                     type = plot.type,
                     xlab = "",
                     ylab = "",
-                    main = "Pairs of eigenvectors",
+                    main = if (identical(what, "eigen")) "Pairs of eigenvectors" else "Pairs of factor vectors",
                     as.table = TRUE,
                     scales = list(draw = FALSE, relation = "free"),
                     aspect = 1,
                     symmetric = TRUE,
                     ref = TRUE)
 
-  res <- do.call("xyplot",
-                 c(list(x = A ~ B | factor(A,
-                                           labels = if (!plot.contrib) paste(A, "vs", B)
-                                                    else paste(A, " (", lambdax, "%) vs ", B, " (", lambday, "%)", sep = "")),
-                        data = d, ssaobj = x,
-                        panel = panel.eigenvectors,
-                        prepanel = prepanel.eigenvectors),
-                   dots))
-  print(res)
+  do.call("xyplot",
+          c(list(x = A ~ B | factor(A,
+                   labels = if (!plot.contrib) paste(A, "vs", B)
+                   else paste(A, " (", lambdax, "%) vs ", B, " (", lambday, "%)", sep = "")),
+                 data = d, ssaobj = x,
+                 panel = if (identical(what, "eigen")) panel.eigenvectors else panel.factorvectors,
+                 prepanel = if (identical(what, "eigen")) prepanel.eigenvectors else prepanel.factorvectors),
+            dots))
 }
 
 prepanel.series <- function(x, y, recon, ..., symmetric = FALSE) {
@@ -196,13 +226,12 @@ panel.series <- function(x, y, recon, ..., ref = FALSE) {
                     as.table = TRUE,
                     scales = list(relation = "free"))
 
-  res <- do.call("xyplot",
-                 c(list(x = A ~ B | factor(A, labels = paste(groups)),
-                        data = d, recon = r,
-                        panel = panel.series,
-                        prepanel = prepanel.series),
-                   dots))
-  print(res)
+  do.call("xyplot",
+          c(list(x = A ~ B | factor(A, labels = paste(groups)),
+                 data = d, recon = r,
+                 panel = panel.series,
+                 prepanel = prepanel.series),
+            dots))
 }
 
 panel.levelplot.wcor <- function(x, y, z, ..., grid, .useRaster = FALSE) {
@@ -240,20 +269,20 @@ plot.wcor.matrix <- function(x,
   # Rename args for transfer to panel function
   names(dots)[names(dots) == "useRaster"] <- ".useRaster"
 
-  res <- do.call("levelplot",
-                 c(list(x = abs(x) ~ row * column,
-                        data = data,
-                        at = seq(zlim[1], zlim[2], length.out = cuts + 2),
-                        panel = panel.levelplot.wcor,
-                        grid = grid,
-                        useRaster = dots$.useRaster),
-                 dots))
-  print(res)
+  do.call("levelplot",
+          c(list(x = abs(x) ~ row * column,
+                 data = data,
+                 at = seq(zlim[1], zlim[2], length.out = cuts + 2),
+                 panel = panel.levelplot.wcor,
+                 grid = grid,
+                 useRaster = dots$.useRaster),
+            dots))
 }
 
 plot.ssa <- function(x,
                      type = c("values", "vectors", "paired", "series", "wcor"),
                      ...,
+                     vectors = c("eigen", "factor"),
                      plot.contrib = TRUE,
                      numvalues = nlambda(x),
                      numvectors = min(nlambda(x), 10),
@@ -261,16 +290,17 @@ plot.ssa <- function(x,
                      idy,
                      groups) {
   type <- match.arg(type)
+  vectors <- match.arg(vectors)
 
   if (identical(type, "values")) {
     .plot.ssa.values(x, ..., numvalues = numvalues)
   } else if (identical(type, "vectors")) {
-    .plot.ssa.vectors(x, ..., plot.contrib = plot.contrib, idx = idx)
+    .plot.ssa.vectors(x, ..., what = vectors, plot.contrib = plot.contrib, idx = idx)
   } else if (identical(type, "paired")) {
     if (missing(idy))
       idy <- idx + 1
 
-    .plot.ssa.paired(x, ..., plot.contrib = plot.contrib, idx = idx, idy = idy)
+    .plot.ssa.paired(x, ..., what = vectors, plot.contrib = plot.contrib, idx = idx, idy = idy)
   } else if (identical(type, "series")) {
     if (missing(groups))
       groups <- as.list(1:min(nlambda(x), nu(x)))
@@ -288,7 +318,7 @@ plot.ssa <- function(x,
 
 plot.1d.ssa.reconstruction <- function(x, ...,
                                        type = c("raw", "cumsum"),
-                                       plot.method = c("native", "matplot"),
+                                       plot.method = c("native", "matplot", "xyplot"),
                                        base.series = NULL,
                                        add.original = TRUE,
                                        add.residuals = TRUE) {
@@ -322,7 +352,8 @@ plot.1d.ssa.reconstruction <- function(x, ...,
   # Merge the attributes in
   attributes(m) <- append(attributes(m), attributes(x[[1]]))
 
-  mnames <- paste("Reconstructed", 1:ncol(m))
+  cnames <- names(x)
+  mnames <- ifelse(cnames == "", 1:ncol(m), cnames)
   if (add.original) {
     m <- cbind(original, m)
     mnames <- c("Original", mnames)
@@ -334,7 +365,9 @@ plot.1d.ssa.reconstruction <- function(x, ...,
   colnames(m) <- mnames
 
   # Plot'em'all!
-  if (identical(plot.method, "matplot") || !is.object(m))
+  if (identical(plot.method, "xyplot"))
+    do.call(xyplot, c(list(m), dots))
+  else if (identical(plot.method, "matplot") || !is.object(m))
     do.call(matplot, c(list(x = m), dots))
   else if (identical(plot.method, "native"))
     do.call(plot, c(list(m), dots))
@@ -344,220 +377,71 @@ plot.1d.ssa.reconstruction <- function(x, ...,
 
 plot.toeplitz.ssa.reconstruction <- `plot.1d.ssa.reconstruction`
 
-prepanel.reconstruction.2d.ssa <- function(z, subscripts, recon, ...) {
-  N <- dim(recon[[z[subscripts]]])
-  x <- c(seq_len(N[1]), rep(1, N[2]))
-  y <- c(seq_len(N[2]), rep(1, N[1]))
-  prepanel.default.levelplot(x, y, subscripts = seq_along(x))
+prepanel.roots <- function(x, y, ...) {
+  lim <- range(x, y, -x, -y, 1, -1)
+  list(xlim = lim, ylim = lim)
 }
 
-panel.reconstruction.2d.ssa <- function(x, y, z, recon, subscripts, at, ...,
-                                        ref = FALSE,
-                                        symmetric = FALSE,
-                                        .cuts = 20,
-                                        .useRaster = FALSE,
-                                        region, contour) {
-  panel <- if (.useRaster) panel.levelplot.raster else panel.levelplot
-  N <- dim(recon[[subscripts]])
-  data <- expand.grid(x = seq_len(N[1]), y = seq_len(N[2]))
-  data$z <- as.vector(recon[[z[subscripts]]])
-
-  if (identical(at, "free")) {
-    z.range <- range(if (symmetric) c(data$z, -data$z) else data$z)
-    at <- seq(z.range[1], z.range[2], length.out = .cuts + 2)
-  }
-
-  panel(data$x, data$y, data$z, subscripts = seq_len(nrow(data)),
-        at = at, contour = FALSE, region = TRUE, ...)
-
-  if (ref) {
-    # Draw zerolevel isoline
-    par <- trellis.par.get("reference.line")
-    panel.contourplot(data$x, data$y, data$z, subscripts = seq_len(nrow(data)),
-                      at = 0, contour = TRUE, region = FALSE,
-                      col = par$col, lty = par$lty, lwd = par$lwd)
-  }
+panel.roots <- function(...) {
+  tt <- seq(0, 2 * pi, length.out = 100)
+  par <- trellis.par.get("reference.line")
+  panel.lines(sin(tt), cos(tt), col = par$col, lty = par$lty, lwd = par$lwd) # TODO MB use `TeachingDemos' package here?
+  panel.xyplot(...)
 }
 
-plot.2d.ssa.reconstruction <- function(x, ...,
-                                       type = c("raw", "cumsum"),
-                                       base.series = NULL,
-                                       add.original = TRUE,
-                                       add.residuals = TRUE,
-                                       add.ranges,
-                                       at) {
+plot.fdimpars.1d <- function(x, ...) {
   dots <- list(...)
-  type <- match.arg(type)
-
-  if (missing(at))
-    at <- if (identical(type, "cumsum")) "same" else "free"
-  if (is.character(at))
-    at <- match.arg(at, c("same", "free"))
-
-  if (missing(add.ranges))
-    add.ranges <- identical(at, "free")
-
-  if (identical(type, "cumsum") && (length(x) > 1)) {
-    for (i in 2:length(x))
-      x[[i]] <- x[[i]] + x[[i - 1]]
-
-    names(x)[2:length(x)] <- paste(names(x)[1], names(x)[2:length(x)], sep = ":")
-  }
-
-  original <- attr(x, "series")
-  residuals <- attr(x, "residuals")
-
-  # Handle base series, if any
-  if (!is.null(base.series)) {
-    stopifnot(inherits(base.series, "ssa.reconstruction"))
-    original <- attr(base.series, "series")
-    names(base.series) <- paste("base", names(base.series), sep = " ")
-    x <- c(base.series, x)
-  }
-
-  if (add.original)
-    x <- c(list(Original = original), x)
-  if (add.residuals)
-    x <- c(x, list(Residuals = residuals))
-
-
-  idx <- seq_along(x)
-  d <- data.frame(row = idx, column = idx, z = idx)
 
   # Provide convenient defaults
   dots <- .defaults(dots,
-                    xlab = "i",
-                    ylab =  "j",
-                    main = "Reconstructions",
-                    as.table = TRUE,
-                    scales = list(draw = FALSE, relation = "same"),
+                    main = "Roots",
+                    xlab = "Real part",
+                    ylab = "Imaginary part",
                     aspect = "iso",
-                    par.settings = list(regions = list(col = colorRampPalette(grey(c(0, 1))))),
-                    cuts = 20,
-                    colorkey = !identical(at, "free"),
-                    symmetric = FALSE,
-                    ref = FALSE,
-                    useRaster = TRUE)
+                    pch = 19)
 
-  # Disable colorkey if subplots are drawing in different scales
-  if (identical(at, "free"))
-    dots$colorkey <- FALSE
-
-  if (identical(at, "same")) {
-    all.values <- unlist(x)
-    at <- pretty(if (dots$symmetric) c(all.values, -all.values) else all.values, n = dots$cuts)
-  }
-
-  # Rename args for transfer to panel function
-  names(dots)[names(dots) == "cuts"] <- ".cuts"
-  names(dots)[names(dots) == "useRaster"] <- ".useRaster"
-
-  labels <- names(x)
-  if (add.ranges) {
-    ranges <- sapply(x, range, na.rm = TRUE)
-    ranges <- signif(ranges, 2)
-    labels <- paste(labels, " [", ranges[1, ],", ", ranges[2, ], "]", sep = "")
-  }
-
-  res <- do.call("levelplot",
-                 c(list(x = z ~ row * column | factor(z, labels = labels),
-                        data = d, recon = x,
-                        at = at,
-                        useRaster = dots$.useRaster,
-                        panel = panel.reconstruction.2d.ssa,
-                        prepanel = prepanel.reconstruction.2d.ssa),
-                   dots))
-  print(res)
+  do.call("xyplot",
+          c(list(Im(roots) ~ Re(roots),
+                 data = x,
+                 panel = panel.roots,
+                 prepanel = prepanel.roots),
+            dots))
 }
 
-prepanel.eigenvectors.2d.ssa <- function(x, y, subscripts, ssaobj, ...) {
-  L <- ssaobj$window
-  x <- c(seq_len(L[1]), rep(1, L[2]))
-  y <- c(seq_len(L[2]), rep(1, L[1]))
-  prepanel.default.levelplot(x, y, subscripts = seq_along(x))
-}
-
-panel.eigenvectors.2d.ssa <- function(x, y, z, ssaobj, subscripts, at, ...,
-                                      ref = FALSE,
-                                      symmetric = FALSE,
-                                      .cuts = 20,
-                                      .useRaster = FALSE,
-                                      region, contour) {
-  panel <- if (.useRaster) panel.levelplot.raster else panel.levelplot
-  L <- ssaobj$window
-
-  data <- expand.grid(x = seq_len(L[1]), y = seq_len(L[2]))
-  data$z <- ssaobj$U[, z[subscripts]]
-
-  if (identical(at, "free")) {
-    z.range <- range(if (symmetric) c(data$z, -data$z) else data$z)
-    at <- seq(z.range[1], z.range[2], length.out = .cuts + 2)
-  }
-  panel.levelplot(data$x, data$y, data$z, subscripts = seq_len(nrow(data)), at = at, ...)
-
-  panel(data$x, data$y, data$z, subscripts = seq_len(nrow(data)),
-        at = at, contour = FALSE, region = TRUE, ...)
-
-  if (ref) {
-    # Draw zerolevel isoline
-    par <- trellis.par.get("reference.line")
-    panel.contourplot(data$x, data$y, data$z, subscripts = seq_len(nrow(data)),
-                      at = 0, contour = TRUE, region = FALSE,
-                      col = par$col, lty = par$lty, lwd = par$lwd)
-  }
-}
-
-.plot.ssa.vectors.2d.ssa <- function(x, ..., plot.contrib = FALSE, idx, at) {
+plot.fdimpars.2d <- function(x, ...) {
   dots <- list(...)
-
-  if (missing(at))
-    at <- "free"
-  if (is.character(at))
-    at <- match.arg(at, c("free", "same"))
-
-  # FIXME: check for proper lengths
-  d <- data.frame(row = idx, column = idx, z = idx)
-
-  if (plot.contrib) {
-    total <- wnorm(x)^2
-    lambda <- round(100*x$lambda[idx]^2 / total, digits = 2);
-  }
 
   # Provide convenient defaults
   dots <- .defaults(dots,
-                    xlab = "i",
-                    ylab =  "j",
-                    main = "Eigenvectors",
-                    as.table = TRUE,
-                    scales = list(draw = FALSE, relation = "same"),
-                    aspect = "iso",
-                    par.settings = list(regions = list(col = colorRampPalette(grey(c(0, 1))))),
-                    cuts = 20,
-                    symmetric = FALSE,
-                    ref = FALSE,
-                    useRaster = TRUE)
+                    main = "Roots",
+                    xlab = "Real part",
+                    ylab = "Imaginary part",
+                    aspect = 1,
+                    pch = 19)
 
-  # Disable colorkey if subplots are drawed in different scales
-  if (identical(at, "free"))
-    dots$colorkey <- FALSE
+  data <- list()
+  data$root <- c(x[[1]]$roots, x[[2]]$roots)
+  data$ind <- rep(c("lambda", "mu"), each = length(x[[1]]$roots))
 
-  if (identical(at, "same")) {
-    all.values <- x$U[, idx]
-    at <- pretty(if (dots$symmetric) c(all.values, -all.values) else all.values, n = dots$cuts)
+  do.call("xyplot",
+          c(list(Im(root) ~ Re(root) | ind,
+                 data = data,
+                 panel = panel.roots,
+                 prepanel = prepanel.roots),
+            dots))
+}
+
+plot.lrr <- function(x, ..., raw = FALSE) {
+  if (!raw) {
+    r <- roots(x)
+    xyplot(Im(r) ~ Re(r), ...)
   }
 
-  # Rename args for transfer to panel function
-  names(dots)[names(dots) == "cuts"] <- ".cuts"
-  names(dots)[names(dots) == "useRaster"] <- ".useRaster"
+  dots <- list(...)
 
-  res <- do.call("levelplot",
-                 c(list(x = z ~ row * column | factor(z,
-                                                      labels = if (!plot.contrib) z else paste(z, " (", lambda, "%)", sep = "")),
-                        data = d, ssaobj = x,
-                        at = at,
-                        useRaster = dots$.useRaster,
-                        panel = panel.eigenvectors.2d.ssa,
-                        prepanel = prepanel.eigenvectors.2d.ssa),
-                   dots));
-  print(res)
+  # Provide convenient defaults
+  dots <- .defaults(dots,
+                    main = "Roots of Linear Recurrence Relation")
+
+  do.call("plot", c(list(roots2pars(roots(x))), dots))
 }

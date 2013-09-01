@@ -21,20 +21,27 @@
   the time-series using the selected grouping
   (\code{\link[Rssa:reconstruct.ssa]{reconstruct}}). One ends with
   frequency estimation (\code{\link[Rssa:parestimate]{parestimate}}) and
-  series forecasting (\code{\link[Rssa:forecast.ssa]{forecast}}).
+  series forecasting (\code{\link[Rssa:forecast.ssa]{forecast}},
+  \code{\link[Rssa:rforecast.ssa]{rforecast}},
+  \code{\link[Rssa:vforecast.ssa]{vforecast}}).
 }
 
-\author{Anton Korobeynikov \email{anton@korobeynikov.info}}
 \references{
   Golyandina, N., Nekrutkin, V. and Zhigljavsky, A. (2001):
   \emph{Analysis of Time Series Structure: SSA and related techniques.}
   Chapman and Hall/CRC. ISBN 1584881941
-  
+
+  Golyandina, N. and Stepanov, D. (2005): \emph{SSA-based approaches to
+    analysis and forecast of multidimensional time series}. In
+  Proceedings of the 5th St.Petersburg Workshop on Simulation, June
+  26-July 2, 2005, St. Petersburg State University, St. Petersburg,
+  293--298. \url{http://www.gistatgroup.com/gus/mssa2.pdf}
+
   Golyandina, N. and Usevich, K. (2009). \emph{2D-extensions of singular
   spectrum analysis: algorithm and elements of theory.} In Matrix
   Methods: Theory, Algorithms, Applications. World Scientific
   Publishing, 450-474.
-  
+
   Korobeynikov, A. (2010) \emph{Computation- and space-efficient
     implementation of SSA.} Statistics and Its Interface, Vol. 3, No. 3,
   Pp. 257-268
@@ -44,17 +51,34 @@
 }
 \keyword{package}
 \seealso{
-    \code{\link{ssa}}, \code{\link[Rssa:decompose.ssa]{decompose}},
-    \code{\link[Rssa:reconstruct.ssa]{reconstruct}},
-    \code{\link{wcor}}, \code{\link[Rssa:plot.ssa]{plot}},
-    \code{\link[Rssa:parestimate]{parestimate}},
-    \code{\link[Rssa:forecast.ssa]{forecast}}
+  \code{\link[Rssa:ssa-input]{ssa-input}},
+  \code{\link{ssa}}, \code{\link[Rssa:decompose.ssa]{decompose}},
+  \code{\link[Rssa:reconstruct.ssa]{reconstruct}},
+  \code{\link{wcor}}, \code{\link[Rssa:plot.ssa]{plot}},
+  \code{\link[Rssa:parestimate]{parestimate}},
+  \code{\link[Rssa:rforecast.ssa]{rforecast}},
+  \code{\link[Rssa:vforecast.ssa]{vforecast}},
+  \code{\link[Rssa:forecast.ssa]{forecast}}
 }
 \examples{
 s <- ssa(co2) # Perform the decomposition using the default window length
 summary(s)        # Show various information about the decomposition
 plot(s)           # Show the plot of the eigenvalues
-f <- reconstruct(s, groups = list(c(1, 4), c(2, 3))) # Reconstruct into 2 series
-plot(co2)         # Plot the original series
-plot(f)           # Plot the reconstruction
+r <- reconstruct(s, groups = list(Trend = c(1, 4),
+                                  Seasonality = c(2:3, 5:6))) # Reconstruct into 2 series
+plot(r, add.original = TRUE)  # Plot the reconstruction
+
+# Simultaneous trend extraction using MSSA
+\donttest{
+s <- ssa(EuStockMarkets, kind = "mssa")
+r <- reconstruct(s, groups = list(Trend = c(1,2)))
+plot(r, plot.method = "xyplot", add.residuals = FALSE,
+     superpose = TRUE, auto.key = list(columns = 2))
+# Trend forecast
+f <- rforecast(s, groups = list(Trend = c(1, 2)),
+               len = 50, only.new = FALSE)
+library(lattice)
+xyplot(ts.union(Original = EuStockMarkets, "Recurrent Forecast" = f),
+       superpose = TRUE, auto.key = list(columns = 2))
+}
 }

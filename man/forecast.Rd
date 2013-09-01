@@ -8,7 +8,7 @@
 \title{Perform SSA forecasting of series}
 
 \description{
-  All-in-one function to perform SSA forecasting of series.
+  All-in-one function to perform SSA forecasting of one-dimensional series.
 }
 
 \usage{
@@ -76,11 +76,13 @@
 \examples{
 s <- ssa(co2)
 # Calculate 24-point forecast using first 6 components as a base
-f <- forecast(s, groups = list(1:6), method = "bootstrap-recurrent", len = 24, R = 50)
+f <- forecast(s, groups = list(1:6), method = "bootstrap-recurrent", len = 24, R = 10)
+\donttest{
 # Plot the result including the last 24 points of the series
 plot(f, include = 24, shadecols = "green", type = "l")
 # Use of predict() for prediction
 p <- predict(s, groups = list(1:6), method = "recurrent", len = 24)
 # Simple plotting
-plot(p)
+plot(p, ylab = "Forecasteed Values")
+}
 }

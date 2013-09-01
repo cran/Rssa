@@ -11,7 +11,7 @@
 \title{Calculate the Linear Recurrence Relation}
 
 \description{
-  Calculates the Linear Recurrence Relation given the 'ssa' object.
+  Calculates the Linear Recurrence Relation given the one-dimensional 'ssa' object.
 }
 
 \usage{
@@ -33,7 +33,7 @@
   \item{U}{Matrix containing the orthonormal basis vectors in columns}
   \item{eps}{Tolerance for verticality checking}
   \item{method}{methods used for calculation of the polynomial roots: via eigenvalues
-    of companion matrix or R's standard polyroot routine}
+    of companion matrix or R's standard \code{polyroot} routine}
   \item{raw}{logical, if 'TRUE' then \code{plot} routine will not add any
     additional plot components (e.g. unit circle)}
 }
@@ -59,8 +59,11 @@
 }
 
 \value{
-  List of object of class 'lrr' for \code{lrr} function call. Or the
-  object itself if 'drop = TRUE' and groups has length one.
+  Named list of object of class 'lrr' for \code{lrr} function call,
+  where elements have the same names as elements of \code{groups}
+  (if group is unnamed, corresponding component gets name `Fn',
+  where `n' is its index in \code{groups} list).
+  Or the object itself if 'drop = TRUE' and groups has length one.
 
   Vector with the roots of the of the characteristic
   polynomial of the LRR for \code{roots} function call. Roots are
