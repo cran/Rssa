@@ -11,6 +11,8 @@ export(clone,
        nu,
        nv,
        nlambda,
+       nsigma,
+       nspecial,
        calc.v,
        precache,
        cleanup,
@@ -49,7 +51,12 @@ export(clone,
 # Period estimation
        parestimate,
 # Gap filling and rank estimation
-       cadzow
+       cadzow,
+# Non-orthogonal decompositions
+       iossa,
+       owcor,
+       fossa,
+       frobenius.cor
        )
 
 S3method("clone", ssa)
@@ -74,6 +81,12 @@ S3method("decompose", "cssa.svd")
 S3method("decompose", "cssa.eigen")
 S3method("decompose", "cssa.propack")
 S3method("decompose", "cssa.nutrlan")
+S3method("decompose", "pssa")
+S3method("decompose", "pssa.svd")
+S3method("decompose", "pssa.eigen")
+S3method("decompose", "pssa.propack")
+S3method("decompose", "pssa.nutrlan")
+S3method("decompose", "ossa")
 S3method("reconstruct", ssa)
 S3method("residuals", ssa)
 S3method("residuals", "ssa.reconstruction")
@@ -84,7 +97,9 @@ S3method("calc.v", "mssa")
 S3method("calc.v", "cssa")
 S3method("$", ssa)
 S3method("print", ssa)
+S3method("print", ossa)
 S3method("summary", ssa)
+S3method("summary", ossa)
 S3method("plot", ssa)
 S3method("plot", "1d.ssa.reconstruction")
 S3method("plot", "toeplitz.ssa.reconstruction")
@@ -96,6 +111,7 @@ S3method("wcor", "1d.ssa")
 S3method("wcor", "2d.ssa")
 S3method("wcor", "toeplitz.ssa")
 S3method("wcor", "mssa")
+S3method("wcor", "ossa")
 S3method("wnorm", "default")
 S3method("wnorm", "1d.ssa")
 S3method("wnorm", "2d.ssa")
@@ -104,6 +120,7 @@ S3method("wnorm", "mssa")
 S3method("plot", wcor.matrix)
 S3method("clusterify", wcor.matrix)
 S3method("clusterify", ssa)
+S3method("lrr", "default")
 S3method("lrr", "1d.ssa")
 S3method("lrr", "toeplitz.ssa")
 S3method("lrr", "mssa")
@@ -112,14 +129,17 @@ S3method("forecast", "1d.ssa")
 S3method("forecast", "toeplitz.ssa")
 S3method("predict", "1d.ssa")
 S3method("predict", "toeplitz.ssa")
+S3method("predict", "mssa")
 S3method("rforecast", "1d.ssa")
 S3method("rforecast", "toeplitz.ssa")
 S3method("rforecast", "mssa")
 S3method("rforecast", "cssa")
+S3method("rforecast", "pssa")
 S3method("vforecast", "1d.ssa")
 S3method("vforecast", "toeplitz.ssa")
 S3method("vforecast", "mssa")
 S3method("vforecast", "cssa")
+S3method("vforecast", "pssa")
 S3method("roots", "lrr")
 S3method("plot", "lrr")
 S3method("print", "fdimpars.1d")
@@ -127,6 +147,8 @@ S3method("plot", "fdimpars.1d")
 S3method("print", "fdimpars.2d")
 S3method("plot", "fdimpars.2d")
 S3method("plot", "hmatr")
+S3method("print", "iossa.result")
+S3method("summary", "iossa.result")
 S3method("bforecast", "1d.ssa")
 S3method("bforecast", "toeplitz.ssa")
 S3method("parestimate", "1d.ssa")
@@ -134,4 +156,5 @@ S3method("parestimate", "2d.ssa")
 S3method("parestimate", "toeplitz.ssa")
 S3method("parestimate", "mssa")
 S3method("cadzow", "ssa")
-S3method("cadzow", "1d.ssa")
+S3method("nspecial", "ssa")
+S3method("nspecial", "pssa")

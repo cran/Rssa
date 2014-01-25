@@ -18,8 +18,18 @@
 #   Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
 #   MA 02139, USA.
 
-lrr.default <- function(U, eps = sqrt(.Machine$double.eps), ...) {
+lrr.default <- function(x, eps = sqrt(.Machine$double.eps), ..., orthonormalize = TRUE) {
+  if (orthonormalize) {
+    U <- qr.Q(qr(x))
+  } else {
+    U <- x
+  }
+
   N <- nrow(U)
+
+  # Return zero LRR coefficients for zero subspace
+  if (ncol(U) == 0) return(rep(0, N - 1))
+
   lpf <- Conj(U) %*% t(U[N, , drop = FALSE])
 
   divider <- 1 - lpf[N]
@@ -31,17 +41,14 @@ lrr.default <- function(U, eps = sqrt(.Machine$double.eps), ...) {
 
 lrr.1d.ssa <- function(x, groups, ..., drop = TRUE) {
   if (missing(groups))
-    groups <- 1:min(nlambda(x), nu(x))
+    groups <- 1:min(nsigma(x), nu(x))
 
   # Continue decomposition, if necessary
   .maybe.continue(x, groups = groups, ...)
 
   out <- list()
   for (i in seq_along(groups)) {
-    group <- groups[[i]]
-    U <- .get(x, "U")[, group, drop = FALSE]
-
-    res <- lrr.default(U, ...)
+    res <- lrr.default(.colspan(x, groups[[i]]), ..., orthonormalize = FALSE)
     class(res) <- "lrr"
 
     out[[i]] <- res
@@ -75,7 +82,12 @@ roots.lrr <- function(x, ..., method = c("companion", "polyroot")) {
   res[order(abs(res), decreasing = TRUE)]
 }
 
-apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
+apply.lrr <- function(F, lrr, len = 1, only.new = FALSE, drift = 0) {
+  # Recycle drifts if needed
+  if (length(drift) != len) {
+    drift <- rep(drift, len)[seq_len(len)]
+  }
+
   N <- length(F)
   r <- length(lrr)
 
@@ -86,7 +98,7 @@ apply.lrr <- function(F, lrr, len = 1, only.new = FALSE) {
   # Run the actual LRR
   F <- c(F, rep(NA, len))
   for (i in 1:len)
-    F[N+i] <- sum(F[(N+i-r) : (N+i-1)]*lrr)
+    F[N+i] <- sum(F[(N+i-r) : (N+i-1)]*lrr) + drift[i]
 
   if (only.new) F[(N+1):(N+len)] else F
 }
@@ -97,11 +109,14 @@ rforecast.1d.ssa <- function(x, groups, len = 1,
                              only.new = TRUE,
                              ...,
                              drop = TRUE, drop.attributes = FALSE, cache = TRUE) {
+  if (x$circular)
+    stop("forecasting is not properly defined for circular SSA")
+
   L <- x$window
 
   base <- match.arg(base)
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(x), nu(x)))
+    groups <- as.list(1:min(nsigma(x), nu(x)))
 
   # Grab the reconstructed series if we're basing on them
   if (identical(base, "reconstructed"))
@@ -116,7 +131,7 @@ rforecast.1d.ssa <- function(x, groups, len = 1,
     group <- groups[[i]]
 
     # Calculate the forecasted values
-    out[[i]] <- apply.lrr(if (identical(base, "reconstructed")) r[[i]] else .get(x, "F"),
+    out[[i]] <- apply.lrr(if (identical(base, "reconstructed")) r[[i]] else .F(x),
                           lf[[i]], len, only.new = only.new)
     out[[i]] <- .apply.attributes(x, out[[i]],
                                   fixup = TRUE,
@@ -167,7 +182,7 @@ rforecast.mssa <- function(x, groups, len = 1,
   base <- match.arg(base)
   direction <- match.arg(direction)
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(x), nu(x)))
+    groups <- as.list(1:min(nsigma(x), nu(x)))
 
   # Grab the reconstructed series if we're basing on them
   if (identical(base, "reconstructed"))
@@ -177,7 +192,7 @@ rforecast.mssa <- function(x, groups, len = 1,
   for (i in seq_along(groups)) {
     group <- groups[[i]]
 
-    F <- if (identical(base, "reconstructed")) .to.series.list(r[[i]]) else .get(x, "F")
+    F <- if (identical(base, "reconstructed")) .to.series.list(r[[i]]) else .F(x)
 
     # Calculate the forecasted values
     if (identical(direction, "column")) {
@@ -236,21 +251,23 @@ vforecast.1d.ssa <- function(x, groups, len = 1,
                              only.new = TRUE,
                              ...,
                              drop = TRUE, drop.attributes = FALSE) {
+  if (x$circular)
+    stop("forecasting is not properly defined for circular SSA")
+
   L <- x$window
   K <- x$length - L + 1
   N <- K + L - 1 + len + L - 1
   N.res <- K + L - 1 + len
 
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(x), nu(x)))
+    groups <- as.list(1:min(nsigma(x), nu(x)))
 
   # Continue decomposition, if necessary
   desired <- .maybe.continue(x, groups = groups, ...)
 
-  lambda <- .get(x, "lambda")
-  U <- .get(x, "U")
-
-  V <- if (nv(x) >= desired) .get(x, "V") else NULL
+  sigma <- .sigma(x)
+  U <- .U(x)
+  V <- if (nv(x) >= desired) .V(x) else NULL
 
   # Grab the FFT plan
   fft.plan <- fft.plan.1d(N)
@@ -261,14 +278,9 @@ vforecast.1d.ssa <- function(x, groups, len = 1,
 
     Uet <- U[, group, drop = FALSE]
     Vet <- if (is.null(V)) calc.v(x, idx = group) else V[, group, drop = FALSE]
+    Z <- rbind(t(sigma[group] * t(Vet)), matrix(NA, len + L - 1, length(group)))
 
-    Z <- rbind(t(lambda[group] * t(Vet)), matrix(NA, len + L - 1, length(group)))
-
-    U.head <- Uet[-L, , drop = FALSE]
-    U.tail <- Uet[-1, , drop = FALSE]
-    Pi <- Uet[L, ]
-    tUhUt <- t(U.head) %*% Conj(U.tail)
-    P <- tUhUt + 1 / (1 - sum(abs(Pi)^2)) * Pi %*% (t(Conj(Pi)) %*% tUhUt)
+    P <- shift.matrix(Uet)
 
     for (j in (K + 1):(K + len + L - 1)) {
       Z[j, ] <- P %*% Z[j - 1, ]
@@ -297,17 +309,16 @@ vforecast.mssa <- function(x, groups, len = 1,
                            drop = TRUE, drop.attributes = FALSE) {
   direction <- match.arg(direction)
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(x), nu(x)))
+    groups <- as.list(1:min(nsigma(x), nu(x)))
 
   # Continue decomposition, if necessary
   desired <- .maybe.continue(x, groups = groups, ...)
 
-  F <- .get(x, "F")
+  F <- .F(x)
 
-  lambda <- .get(x, "lambda")
-  U <- .get(x, "U")
-
-  V <- if (nv(x) >= desired) .get(x, "V") else NULL
+  dec <- .decomposition(x)
+  sigma <- .sigma(dec)
+  V <- if (nv(x) >= desired) .rowspan(dec) else NULL
 
   L <- x$window
   K <- x$length - L + 1
@@ -325,7 +336,7 @@ vforecast.mssa <- function(x, groups, len = 1,
   for (i in seq_along(groups)) {
     group <- unique(groups[[i]])
 
-    Uet <- U[, group, drop = FALSE]
+    Uet <- .colspan(dec, group)
     Vet <- if (is.null(V)) calc.v(x, idx = group) else V[, group, drop = FALSE]
 
     if (identical(direction, "column")) {
@@ -336,7 +347,7 @@ vforecast.mssa <- function(x, groups, len = 1,
       P <- tUhUt + 1 / (1 - sum(Pi^2)) * Pi %*% (t(Pi) %*% tUhUt)
 
       R <- lapply(seq_along(N), function(idx) {
-          Z <- rbind(t(lambda[group] * t(Vet[cKs[idx] : cK[idx], , drop = FALSE])), matrix(NA, len + L - 1, length(group)))
+          Z <- rbind(t(sigma[group] * t(Vet[cKs[idx] : cK[idx], , drop = FALSE])), matrix(NA, len + L - 1, length(group)))
 
           for (j in (K[idx] + 1) : (K[idx] + len + L - 1)) {
             Z[j, ] <- P %*% Z[j - 1, ]
@@ -353,7 +364,7 @@ vforecast.mssa <- function(x, groups, len = 1,
       tVhVt <- crossprod(V.head, V.tail)
       P <- tVhVt + t(Pi) %*% (solve(diag(length(N)) - tcrossprod(Pi), Pi) %*% tVhVt)
 
-      Z <- rbind(t(lambda[group] * t(Uet)), matrix(NA, len + max(K) - 1, length(group)))
+      Z <- rbind(t(sigma[group] * t(Uet)), matrix(NA, len + max(K) - 1, length(group)))
 
       for (j in (L + 1) : (L + len + max(K) - 1)) {
         Z[j, ] <- P %*% Z[j - 1, ]
@@ -399,7 +410,7 @@ bforecast.1d.ssa <- function(x, groups,
   type <- match.arg(type)
   dots <- list(...)
   if (missing(groups))
-    groups <- list(1:min(nlambda(x), nu(x)))
+    groups <- list(1:min(nsigma(x), nu(x)))
 
   out <- list()
   for (i in seq_along(groups)) {
@@ -413,8 +424,6 @@ bforecast.1d.ssa <- function(x, groups,
     boot.forecast <- function(F, base) {
       s <- clone(base, copy.cache = FALSE, copy.storage = FALSE)
       .set(s, "F", F)
-      .set(s, "Fattr", attributes(F))
-      .set(s, "Fclass", class(F))
       do.call(forecast.fun,
               c(list(s,
                      groups = list(group), len = len, drop = TRUE, only.new = TRUE),
@@ -455,6 +464,22 @@ predict.1d.ssa <- function(object,
           'bootstrap-vector' =  do.call(bforecast, c(list(object, type = "vector", groups = groups, len = len, drop = drop, drop.attributes = drop.attributes, cache = cache), dots)))
 }
 
+predict.mssa <- function(object,
+                         groups, len = 1,
+                         method = c("recurrent-column", "recurrent-row", "vector-column", "vector-row"),
+                         ...,
+                         drop = TRUE, drop.attributes = FALSE, cache = TRUE) {
+  method <- match.arg(method)
+  dots <- list(...)
+
+  # Calculate a forecast
+  switch (method,
+          'recurrent-row' = do.call(rforecast, c(list(object, direction = "row", groups = groups, len = len, drop = drop, drop.attributes = drop.attributes, cache = cache), dots)),
+          'recurrent-column' = do.call(rforecast, c(list(object, direction = "column", groups = groups, len = len, drop = drop, drop.attributes = drop.attributes, cache = cache), dots)),
+          'vector-row' = do.call(vforecast, c(list(object, direction = "row", groups = groups, len = len, cache = cache), dots)),
+          'vector-column' = do.call(vforecast, c(list(object, direction = "column", groups = groups, len = len, cache = cache), dots)))
+}
+
 forecast.1d.ssa <- function(object,
                             groups, len = 1,
                             method = c("recurrent", "vector", "bootstrap-recurrent", "bootstrap-vector"),
@@ -479,7 +504,7 @@ forecast.1d.ssa <- function(object,
     res <- list(model = object,
                 method = switch(method,
                                 recurrent = "SSA (recurrent)",
-                                recurrent = "SSA (vector)",
+                                vector = "SSA (vector)",
                                 `bootstrap-recurrent` = "SSA (bootstrap recurrent)",
                                 `bootstrap-vector` = "SSA (bootstrap vector)"),
                 fitted = r[[1]],

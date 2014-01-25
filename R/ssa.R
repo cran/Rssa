@@ -17,7 +17,7 @@
 #   Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
 #   MA 02139, USA.
 
-determine.svd.method <- function(L, K, neig = NULL, ..., svd.method = "nutrlan") {
+.determine.svd.method <- function(L, K, neig = NULL, ..., svd.method = "nutrlan") {
   truncated <- (identical(svd.method, "nutrlan") || identical(svd.method, "propack"))
 
   if (is.null(neig)) neig <- min(50, L, K)
@@ -50,8 +50,11 @@ ssa <- function(x,
                 neig = NULL,
                 mask = NULL,
                 wmask = NULL,
+                column.projector = "none",
+                row.projector = "none",
                 ...,
                 kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa", "mssa", "cssa"),
+                circular = FALSE,
                 svd.method = c("auto", "nutrlan", "propack", "svd", "eigen"),
                 force.decompose = TRUE) {
   svd.method <- match.arg(svd.method)
@@ -63,21 +66,49 @@ ssa <- function(x,
 
   # Do the fixups depending on the kind of SSA.
   if (identical(kind, "1d-ssa") || identical(kind, "toeplitz-ssa")) {
+    if (length(circular) > 1)
+      warning("Incorrect argument length: length(circular) > 1, the first value will be used")
+    if (length(circular) != 1)
+      circular <- circular[1]
+    if (circular && identical(kind, "1d-ssa"))
+      stop("Circular variant of 1d SSA isn't implemented yet")
+
     # Coerce input to vector if necessary
     if (!is.vector(x))
       x <- as.vector(x)
 
     N <- length(x)
+    K <- N - L + 1
 
     if (is.null(neig))
-      neig <- min(50, L, N - L + 1)
+      neig <- min(50, L, K)
 
     # Fix svd method, if needed
     if (identical(svd.method, "auto"))
-      svd.method <- determine.svd.method(L, N - L + 1, neig, ...)
+      svd.method <- .determine.svd.method(L, K, neig, ...)
 
     wmask <- fmask <- weights <- NULL
+
+    if (!identical(column.projector, "none") || !identical(row.projector, "none")) {
+      # Compute projectors
+      column.projector <- if (length(column.projector) == 1) orthopoly(column.projector, L) else qr.Q(qr(column.projector))
+      row.projector <- if (length(row.projector) == 1) orthopoly(row.projector, K) else qr.Q(qr(row.projector))
+
+      # Check projector dimensions
+      stopifnot(nrow(column.projector) == L)
+      stopifnot(nrow(row.projector) == K)
+
+      # ProjectionSSA is just a special case of 1d-ssa
+      kind <- c("pssa", "1d-ssa")
+    } else {
+      column.projector <- row.projector <- NULL
+    }
   } else if (identical(kind, "2d-ssa")) {
+    if (length(circular) > 2)
+      warning("Incorrect argument length: length(circular) > 2, two leading values will be used")
+    if (length(circular) != 2)
+      circular <- rep(circular, 2)[1:2]
+
     # Coerce input to matrix if necessary
     if (!is.matrix(x))
       x <- as.matrix(x)
@@ -105,12 +136,12 @@ ssa <- function(x,
 
     # Fix SVD method.
     if (identical(svd.method, "auto"))
-      svd.method <- determine.svd.method(prod(L), prod(N - L + 1), neig, ..., svd.method = "nutrlan")
+      svd.method <- .determine.svd.method(prod(L), prod(N - L + 1), neig, ..., svd.method = "nutrlan")
 
-    fmask <- factor.mask(mask, wmask)
+    fmask <- factor.mask(mask, wmask, circular = circular)
 
-    if (!all(wmask) || !all(fmask)) {
-      weights <- field.weights(wmask, fmask)
+    if (!all(wmask) || !all(fmask) || any(circular)) {
+      weights <- field.weights(wmask, fmask, circular = circular)
 
       ommited <- sum(mask & (weights == 0))
       if (ommited > 0) {
@@ -128,7 +159,12 @@ ssa <- function(x,
       wmask <- NULL
     if (all(fmask))
       fmask <- NULL
+
+    column.projector <- row.projector <- NULL
   } else if (identical(kind, "mssa")) {
+    if (any(circular))
+      stop("Circular variant of multichannel SSA isn't implemented yet")
+
     # We assume that we have mts-like object. With series in the columns.
     # Coerce input to series.list object
     # Note that this will correctly remove leading and trailing NA's
@@ -152,7 +188,7 @@ ssa <- function(x,
 
     # Fix SVD method.
     if (identical(svd.method, "auto"))
-      svd.method <- determine.svd.method(L, sum(N - L + 1), neig, ...)
+      svd.method <- .determine.svd.method(L, sum(N - L + 1), neig, ...)
 
     wmask <- NULL
     if (!all(N == max(N))) {
@@ -167,7 +203,12 @@ ssa <- function(x,
     } else {
       fmask <- weights <- NULL
     }
+
+    column.projector <- row.projector <- NULL
   } else if (identical(kind, "cssa")) {
+    if (any(circular))
+      stop("Circular variant of complex SSA isn't implemented yet")
+
     # Sanity check - the input series should be complex
     if (!is.complex(x))
       stop("complex SSA should be performed on complex time series")
@@ -178,9 +219,11 @@ ssa <- function(x,
 
     # Fix SVD method.
     if (identical(svd.method, "auto"))
-      svd.method <- determine.svd.method(L, N - L + 1, neig, ..., svd.method = "eigen")
+      svd.method <- .determine.svd.method(L, N - L + 1, neig, ..., svd.method = "eigen")
 
     wmask <- fmask <- weights <- NULL
+
+    column.projector <- row.projector <- NULL
   }
   stopifnot(!is.null(neig))
 
@@ -196,23 +239,42 @@ ssa <- function(x,
                svd.method = svd.method)
 
   # Create data storage
-  this <- .create.storage(this);
+  this <- .create.storage(this)
+
+  # Save the names of the essential fields
+  this$fields <- c("F",
+                   "wmask", "fmask", "weights", "circular",
+                   "Fattr", "Fclass", "Iattr",
+                   "column.projector", "row.projector")
 
   # Save series
   .set(this, "F", x);
 
-  # Save masks and weights
+  # Save masks, weights and topology
   .set(this, "wmask", wmask)
   .set(this, "fmask", fmask)
   .set(this, "weights", weights)
+  .set(this, "circular", circular)
 
   # Save attributes
   .set(this, "Fattr", xattr)
   .set(this, "Fclass", xclass)
   .set(this, "Iattr", iattr)
 
+  # Deprecated stuff
+  .deprecate(this, "lambda", "sigma")
+
+  # Store projectors
+  .set(this, "column.projector", column.projector)
+  .set(this, "row.projector", row.projector)
+
   # Make this S3 object
-  class(this) <- c(paste(kind, svd.method, sep = "."), kind, "ssa");
+  class(this) <- c(do.call("c", lapply(kind,
+                                       function(kind)
+                                         list(paste(kind, svd.method, sep = "."),
+                                              kind)
+                                       )),
+                   "ssa")
 
   # Perform additional init steps, if necessary
   .init(this)
@@ -234,15 +296,15 @@ ssa <- function(x,
   K <- x$length - x$window + 1
 
   # Determine the upper bound of desired eigentriples
-  desired <- max(unlist(groups))
+  desired <- max(unlist(groups), -Inf)
 
   # Sanity check
   if (desired > min(.traj.dim(x)))
     stop("Cannot decompose that much, desired elementary series index is too huge")
 
   # Continue decomposition, if necessary
-  if (desired > min(nlambda(x), nu(x)))
-    decompose(x, ..., neig = min(desired + 1, min(.traj.dim(x))))
+  if (desired > min(nsigma(x), nu(x)))
+    decompose(x, ..., neig = min(desired + 1 - nspecial(x), min(.traj.dim(x))))
 
   desired
 }
@@ -251,7 +313,7 @@ precache <- function(x, n, ...) {
   if (missing(n)) {
     warning("Amount of sub-series missed, precaching EVERYTHING",
             immediate. = TRUE);
-    n <- nlambda(x);
+    n <- nsigma(x)
   }
 
   # Calculate numbers of sub-series to be calculated
@@ -302,7 +364,7 @@ reconstruct.ssa <- function(x, groups, ...,
   out <- list();
 
   if (missing(groups))
-    groups <- as.list(1:min(nlambda(x), nu(x)));
+    groups <- as.list(1:min(nsigma(x), nu(x)));
 
   # Continue decomposition, if necessary
   .maybe.continue(x, groups = groups, ...)
@@ -311,7 +373,7 @@ reconstruct.ssa <- function(x, groups, ...,
   info <- .get.series.info(x);
 
   # Do actual reconstruction. Calculate the residuals on the way
-  residuals <- .get(x, "F")
+  residuals <- .F(x)
   for (i in seq_along(groups)) {
     group <- groups[[i]];
     new <- setdiff(group, info);
@@ -342,7 +404,7 @@ reconstruct.ssa <- function(x, groups, ...,
   names(out) <- .group.names(groups)
 
   # Calculate the residuals
-  residuals <- .get(x, "F")
+  residuals <- .F(x)
   rgroups <- unique(unlist(groups))
   info <- .get.series.info(x);
   rcached <- intersect(rgroups, info)
@@ -354,7 +416,7 @@ reconstruct.ssa <- function(x, groups, ...,
 
   # Propagate attributes of residuals
   residuals <- .apply.attributes(x, residuals, fixup = FALSE, drop = drop.attributes)
-  F <- .apply.attributes(x, .get(x, "F"), fixup = FALSE, drop = drop.attributes)
+  F <- .apply.attributes(x, .F(x), fixup = FALSE, drop = drop.attributes)
 
   attr(out, "residuals") <- residuals;
   attr(out, "series") <- F;
@@ -365,7 +427,7 @@ reconstruct.ssa <- function(x, groups, ...,
 }
 
 residuals.ssa <- function(object, groups, ..., cache = TRUE) {
-  groups <- list(if (missing(groups)) 1:min(nlambda(object), nu(object)) else unlist(groups))
+  groups <- list(if (missing(groups)) 1:min(nsigma(object), nu(object)) else unlist(groups))
 
   residuals(reconstruct(object, groups = groups, ..., cache = cache))
 }
@@ -375,45 +437,59 @@ residuals.ssa.reconstruction <- function(object, ...) {
 }
 
 .elseries.default <- function(x, idx, ...) {
-  if (max(idx) > nlambda(x))
+  if (max(idx) > nsigma(x))
     stop("Too few eigentriples computed for this decomposition")
 
-  lambda <- .get(x, "lambda");
-  U <- .get(x, "U");
+  dec <- .decomposition(x)
+  sigma <- .sigma(dec)
+  U <- .U(dec)
 
   res <- numeric(prod(x$length));
   for (i in idx) {
     if (nv(x) >= i) {
       # FIXME: Check, whether we have factor vectors for reconstruction
       # FIXME: Get rid of .get call
-      V <- .get(x, "V")[, i];
+      V <- .V(x)[, i];
     } else {
       # No factor vectors available. Calculate them on-fly.
       V <- calc.v(x, i);
     }
 
-    res <- res + lambda[i] * .hankelize.one(x, U = U[, i], V = V);
+    res <- res + sigma[i] * .hankelize.one(x, U = U[, i], V = V);
   }
 
   res;
 }
 
 nu <- function(x) {
-  ifelse(.exists(x, "U"), ncol(.get(x, "U")), 0);
+  res <- ncol(.U(x))
+  ifelse(is.null(res), 0, res)
 }
 
 nv <- function(x) {
-  ifelse(.exists(x, "V"), ncol(.get(x, "V")), 0);
+  res <- ncol(.V(x))
+  ifelse(is.null(res), 0, res)
 }
 
 nlambda <- function(x) {
-  ifelse(.exists(x, "lambda"), length(.get(x, "lambda")), 0);
+  warning("this function is deprecated, use `nsigma' instead")
+  nsigma(x)
+}
+
+nsigma <- function(x) {
+  length(.sigma(x))
 }
 
 clone.ssa <- function(x, copy.storage = TRUE, copy.cache = TRUE, ...) {
-  obj <- .clone(x, copy.storage = copy.storage);
+  obj <- .clone(x, copy.storage = copy.storage)
+
+  # We need to copy the "essential" fields
+  if (copy.storage == FALSE)
+    for (field in x$fields)
+      .set(obj, field, .get(x, field))
+
   if (copy.cache == FALSE)
-    cleanup(obj);
+    cleanup(obj)
 
   obj;
 }
@@ -424,7 +500,7 @@ clusterify.ssa <- function(x, group, nclust = length(group) / 2,
   type <- match.arg(type)
 
   if (missing(group))
-    group <- as.list(1:nlambda(x));
+    group <- as.list(1:nsigma(x));
 
   if (identical(type, "wcor")) {
     w <- wcor(x, groups = group, ..., cache = cache);
@@ -437,13 +513,31 @@ clusterify.ssa <- function(x, group, nclust = length(group) / 2,
 }
 
 '$.ssa' <- function(x, name) {
+  # First, check the fields of the object itself
   if (ind <- charmatch(name, names(x), nomatch = 0))
-    return (x[[ind]]);
+    return (x[[ind]])
 
-  if (.exists(x, name))
-    return (.get(x, name));
+  # Now, check the fields of the storage
+  res <- .get(x, name, allow.null = TRUE)
+  if (!is.null(res)) {
+     # Check for deprecation
+    if (isTRUE(attr(res, "deprecated"))) {
+      msg <- paste("the field `", name, "' is deprecated", sep = "")
+      instead <- attr(res, "instead")
 
-  NULL;
+      # If no substitution is available, just stop here
+      if (is.null(instead))
+        stop(msg)
+
+      # Otherwise, warn and fallback to new name
+      warning(paste(msg, ". use `", instead, "' instead.", sep = ""))
+      res <- Recall(x, instead)
+    }
+    return (res)
+  }
+
+  # Final special case: the fields of the decomposition
+  .decomposition(x)[[name]]
 }
 
 .object.size <- function(x, pat = NULL) {
@@ -465,8 +559,9 @@ print.ssa <- function(x, digits = max(3, getOption("digits") - 3), ...) {
   cat("Series length:", paste(x$length, collapse = clp));
   cat(",\tWindow length:", paste(x$window, collapse = " x "));
   cat(",\tSVD method:", x$svd.method);
+  cat("\nSpecial triples: ", nspecial(x));
   cat("\n\nComputed:\n");
-  cat("Eigenvalues:", nlambda(x));
+  cat("Eigenvalues:", nsigma(x));
   cat(",\tEigenvectors:", nu(x));
   cat(",\tFactor vectors:", nv(x));
   cat("\n\nPrecached:",

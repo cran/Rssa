@@ -44,7 +44,7 @@ hankel <- function(X, L) {
 
 .get.or.create.hmat <- function(x) {
   .get.or.create(x, "hmat",
-                 new.hmat(x$F, L = x$window,
+                 new.hmat(.F(x), L = x$window,
                           fft.plan = .get.or.create.fft.plan(x)))
 }
 
@@ -103,13 +103,6 @@ hmatmul <- function(hmat, v, transposed = FALSE) {
   .Call("hmatmul", hmat, v, transposed);
 }
 
-.init.1d.ssa <- function(x, ...) {
-  # Initialize FFT plan
-  .get.or.create.fft.plan(x)
-
-  x
-}
-
 .traj.dim.default <- function(x) {
   c(x$window, x$length - x$window + 1)
 }
@@ -129,22 +122,17 @@ decompose.1d.ssa.svd <- function(x,
   N <- x$length; L <- x$window; K <- N - L + 1
 
   # Check, whether continuation of decomposition is requested
-  if (!force.continue && nlambda(x) > 0)
+  if (!force.continue && nsigma(x) > 0)
     stop("Continuation of decomposition is not supported for this method.")
 
   # Build hankel matrix
-  F <- .get(x, "F")
-  h <- hankel(F, L = L)
+  h <- hankel(.F(x), L = L)
 
   # Do decomposition
   S <- svd(h, nu = neig, nv = neig)
 
   # Save results
-  .set(x, "lambda", S$d)
-  if (!is.null(S$u))
-    .set(x, "U", S$u)
-  if (!is.null(S$v))
-    .set(x, "V", S$v)
+  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
 
   x
 }
@@ -165,22 +153,22 @@ decompose.1d.ssa.eigen <- function(x,
   N <- x$length; L <- x$window; K <- N - L + 1
 
   # Check, whether continuation of decomposition is requested
-  if (!force.continue && nlambda(x) > 0)
+  if (!force.continue && nsigma(x) > 0)
     stop("Continuation of decomposition is not supported for this method.")
 
   # Build hankel matrix
-  F <- .get(x, "F")
   fft.plan <- .get.or.create.fft.plan(x)
 
   # Do decomposition
-  S <- eigen(Lcov.matrix(F, L = L, fft.plan = fft.plan), symmetric = TRUE)
+  S <- eigen(Lcov.matrix(.F(x), L = L, fft.plan = fft.plan), symmetric = TRUE)
 
   # Fix small negative values
   S$values[S$values < 0] <- 0
 
   # Save results
-  .set(x, "lambda", sqrt(S$values[1:neig]))
-  .set(x, "U", S$vectors[, 1:neig, drop = FALSE])
+  .set.decomposition(x,
+                     sigma = sqrt(S$values[1:neig]),
+                     U = S$vectors[, 1:neig, drop = FALSE])
 
   x
 }
@@ -192,48 +180,59 @@ decompose.1d.ssa.propack <- function(x,
   N <- x$length; L <- x$window; K <- N - L + 1
 
   # Check, whether continuation of decomposition is requested
-  if (!force.continue && nlambda(x) > 0)
+  if (!force.continue && nsigma(x) > 0)
     stop("Continuation of decompostion is not yet implemented for this method.")
 
   h <- .get.or.create.hmat(x)
   S <- propack.svd(h, neig = neig, ...)
 
   # Save results
-  .set(x, "lambda", S$d)
-  if (!is.null(S$u))
-    .set(x, "U", S$u)
-  if (!is.null(S$v))
-    .set(x, "V", S$v)
+  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
 
   x
 }
 
 decompose.1d.ssa.nutrlan <- function(x,
                                      neig = min(50, L, K),
-                                       ...) {
+                                     ...) {
   N <- x$length; L <- x$window; K <- N - L + 1
 
   h <- .get.or.create.hmat(x)
 
-  lambda <- .get(x, "lambda", allow.null = TRUE)
-  U <- .get(x, "U", allow.null = TRUE)
-
   S <- trlan.svd(h, neig = neig, ...,
-                 lambda = lambda, U = U)
+                 lambda = .sigma(x), U = .U(x))
 
   # Save results
-  .set(x, "lambda", S$d)
-  if (!is.null(S$u))
-    .set(x, "U", S$u)
+  .set.decomposition(x, sigma = S$d, U = S$u);
 
   x
 }
 
 calc.v.1d.ssa <- function(x, idx, ...) {
-  lambda <- .get(x, "lambda")[idx]
-  U <- .get(x, "U")[, idx, drop = FALSE]
-  h <- .get.or.create.hmat(x)
+  N <- x$length; L <- x$window; K <- N - L + 1
+  nV <- nv(x)
 
-  invisible(sapply(1:length(idx),
-                   function(i) hmatmul(h, U[, i], transposed = TRUE) / lambda[i]))
+  V <- matrix(NA_real_, K, length(idx))
+  idx.old <- idx[idx <= nV]
+  idx.new <- idx[idx > nV]
+
+  if (length(idx.old) > 0) {
+    V[, idx <= nV] <- .V(x)[, idx.old]
+  }
+
+  if (length(idx.new) > 0) {
+    sigma <- .sigma(x)[idx.new]
+
+    if (any(sigma <= .Machine$double.eps)) {
+      sigma[sigma <= .Machine$double.eps] <- Inf
+      warning("some sigmas are equal to zero. The corresponding vectors will be zeroed")
+    }
+
+    U <- .U(x)[, idx.new, drop = FALSE]
+    h <- .get.or.create.hmat(x)
+    V[, idx > nV] <- sapply(seq_along(idx.new),
+                            function(i) hmatmul(h, U[, i], transposed = TRUE) / sigma[i])
+  }
+
+  invisible(V)
 }

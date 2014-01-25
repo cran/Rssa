@@ -11,8 +11,8 @@
      \dots,
      vectors = c("eigen", "factor"),
      plot.contrib = TRUE,
-     numvalues = nlambda(x),
-     numvectors = min(nlambda(x), 10),
+     numvalues = nsigma(x),
+     numvectors = min(nsigma(x), 10),
      idx = 1:numvectors,
      idy,
      groups)
@@ -25,7 +25,9 @@
     parameters}
   \item{vectors}{For type = 'vectors', choose the vectors to plot}
   \item{plot.contrib}{logical. If 'TRUE' (the default), the contribution
-    of the component to the total variance is plotted}
+    of the component to the total variance is plotted.
+    For `ossa' class, Frobenius orthogonality checking of elementary matrices is performed.
+    If not all matrices are orthogonal, corresponding warning is risen}
   \item{numvalues}{Number of eigenvalues to plot (for type = 'values')}
   \item{numvectors}{Total number of eigenvectors to plot (for type = 'vectors')}
   \item{idx}{Indices of eigenvectors to plot (for type = 'vectors')}

@@ -48,8 +48,8 @@ panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
 }
 
 prepanel.factorvectors <- function(x, y, ssaobj, symmetric = FALSE) {
-  V <- if (y <= nv(ssaobj)) ssaobj$U[, y] else calc.v(ssaobj, idx = y)
-  U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$U[, x] else calc.v(ssaobj, idx = x)
+  V <- if (y <= nv(ssaobj)) ssaobj$V[, y] else calc.v(ssaobj, idx = y)
+  U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$V[, x] else calc.v(ssaobj, idx = x)
 
   res <- prepanel.default.xyplot(U, V)
   if (symmetric) {
@@ -62,8 +62,8 @@ prepanel.factorvectors <- function(x, y, ssaobj, symmetric = FALSE) {
 }
 
 panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
-  V <- if (y <= nv(ssaobj)) ssaobj$U[, y] else calc.v(ssaobj, idx = y)
-  U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$U[, x] else calc.v(ssaobj, idx = x)
+  V <- if (y <= nv(ssaobj)) ssaobj$V[, y] else calc.v(ssaobj, idx = y)
+  U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$V[, x] else calc.v(ssaobj, idx = x)
 
   if (ref) {
     panel.abline(h = 0, ..., reference = TRUE)
@@ -83,7 +83,7 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   dots <- list(...)
 
   # FIXME: check for proper lengths
-  d <- data.frame(A = 1:numvalues, B = x$lambda[1:numvalues])
+  d <- data.frame(A = 1:numvalues, B = x$sigma[1:numvalues])
 
   # Provide convenient defaults
   dots <- .defaults(dots,
@@ -115,8 +115,14 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   d <- data.frame(A = idx, B = idx)
 
   if (plot.contrib) {
+    # Check for F-orthogonality
+    isfcor <- .is.frobenius.orthogonal(x, idx, ...)
+    if (!isTRUE(isfcor))
+      warning(sprintf("Elementary matrices are not F-orthogonal (max F-cor is %s). Contributions can be irrelevant",
+                      format(isfcor, digits = 3)))
+
     total <- wnorm(x)^2
-    lambda <- round(100*x$lambda[idx]^2 / total, digits = 2)
+    sigma <- round(100*x$sigma[idx]^2 / total, digits = 2)
   }
 
   # Provide convenient defaults
@@ -133,7 +139,7 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
 
   do.call("xyplot",
           c(list(x = A ~ B | factor(A,
-                   labels = if (!plot.contrib) A else paste(A, " (", lambda, "%)", sep = "")),
+                   labels = if (!plot.contrib) A else paste(A, " (", sigma, "%)", sep = "")),
                  data = d, ssaobj = x,
                  panel = if (identical(what, "eigen")) panel.eigenvectors else panel.factorvectors,
                  prepanel = if (identical(what, "eigen")) prepanel.eigenvectors else prepanel.factorvectors),
@@ -152,9 +158,15 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   d <- data.frame(A = idx, B = idy)
 
   if (plot.contrib) {
+    # Check for F-orthogonality
+    isfcor <- .is.frobenius.orthogonal(x, idx, ...)
+    if (!isTRUE(isfcor))
+      warning(sprintf("Elementary matrices are not F-orthogonal (max F-cor is %s). Contributions can be irrelevant",
+                      format(isfcor, digits = 3)))
+
     total <- wnorm(x)^2
-    lambdax <- round(100*x$lambda[idx]^2 / total, digits = 2)
-    lambday <- round(100*x$lambda[idy]^2 / total, digits = 2)
+    sigmax <- round(100*x$sigma[idx]^2 / total, digits = 2)
+    sigmay <- round(100*x$sigma[idy]^2 / total, digits = 2)
   }
 
   # Provide convenient defaults
@@ -172,7 +184,7 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   do.call("xyplot",
           c(list(x = A ~ B | factor(A,
                    labels = if (!plot.contrib) paste(A, "vs", B)
-                   else paste(A, " (", lambdax, "%) vs ", B, " (", lambday, "%)", sep = "")),
+                   else paste(A, " (", sigmax, "%) vs ", B, " (", sigmay, "%)", sep = "")),
                  data = d, ssaobj = x,
                  panel = if (identical(what, "eigen")) panel.eigenvectors else panel.factorvectors,
                  prepanel = if (identical(what, "eigen")) prepanel.eigenvectors else prepanel.factorvectors),
@@ -208,7 +220,13 @@ panel.series <- function(x, y, recon, ..., ref = FALSE) {
   panel.xyplot(X, Y, ...)
 }
 
-.plot.ssa.series <- function(x, ..., groups, plot.type = "l") {
+.plot.ssa.series <- function(x, ...)
+  UseMethod(".plot.ssa.series")
+
+.plot.ssa.series.ssa <- function(x, ..., groups)
+  plot(reconstruct(x, groups = groups, drop = FALSE), ...)
+
+.plot.ssa.series.1d.ssa <- function(x, ..., groups, plot.type = "l") {
   dots <- list(...)
 
   # FIXME: check for proper lengths
@@ -233,6 +251,8 @@ panel.series <- function(x, y, recon, ..., ref = FALSE) {
                  prepanel = prepanel.series),
             dots))
 }
+
+.plot.ssa.series.toeplitz.ssa <- .plot.ssa.series.1d.ssa
 
 panel.levelplot.wcor <- function(x, y, z, ..., grid, .useRaster = FALSE) {
   panel <- if (.useRaster) panel.levelplot.raster else panel.levelplot
@@ -274,8 +294,7 @@ plot.wcor.matrix <- function(x,
                  data = data,
                  at = seq(zlim[1], zlim[2], length.out = cuts + 2),
                  panel = panel.levelplot.wcor,
-                 grid = grid,
-                 useRaster = dots$.useRaster),
+                 grid = grid),
             dots))
 }
 
@@ -284,8 +303,8 @@ plot.ssa <- function(x,
                      ...,
                      vectors = c("eigen", "factor"),
                      plot.contrib = TRUE,
-                     numvalues = nlambda(x),
-                     numvectors = min(nlambda(x), 10),
+                     numvalues = nsigma(x),
+                     numvectors = min(nsigma(x), 10),
                      idx = 1:numvectors,
                      idy,
                      groups) {
@@ -303,12 +322,12 @@ plot.ssa <- function(x,
     .plot.ssa.paired(x, ..., what = vectors, plot.contrib = plot.contrib, idx = idx, idy = idy)
   } else if (identical(type, "series")) {
     if (missing(groups))
-      groups <- as.list(1:min(nlambda(x), nu(x)))
+      groups <- as.list(1:min(nsigma(x), nu(x)))
 
     .plot.ssa.series(x, ..., groups = groups)
   } else if (identical(type, "wcor")) {
     if (missing(groups))
-      groups <- as.list(1:min(nlambda(x), nu(x)))
+      groups <- as.list(1:min(nsigma(x), nu(x)))
 
     plot(wcor(x, groups = groups), ...)
   } else {

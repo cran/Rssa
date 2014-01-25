@@ -167,7 +167,6 @@ plot.2d.ssa.reconstruction <- function(x, ...,
           c(list(x = z ~ row * column | factor(z, labels = labels),
                  data = d, recon = x,
                  at = at,
-                 useRaster = dots$.useRaster,
                  panel = panel.reconstruction.2d.ssa,
                  prepanel = prepanel.reconstruction.2d.ssa),
             dots))
@@ -177,7 +176,7 @@ prepanel.eigenvectors.2d.ssa <- function(x, y, subscripts, ssaobj, ..., what = "
   if (identical(what, "eigen")) {
     Ls <- ssaobj$window
   } else if (identical(what, "factor")) {
-    Ls <- ssaobj$length - ssaobj$window + 1
+    Ls <- ifelse(ssaobj$circular, ssaobj$length, ssaobj$length - ssaobj$window + 1)
   }
 
   y <- c(seq_len(Ls[1]), rep(1, Ls[2]))
@@ -205,7 +204,7 @@ panel.eigenvectors.2d.ssa <- function(x, y, z, ssaobj, subscripts, at, ...,
     vmask <- .get(ssaobj, "wmask")
     vectors <- ssaobj$U[, idx]
   } else if (identical(what, "factor")) {
-    Ls <- ssaobj$length - ssaobj$window + 1
+    Ls <- ifelse(ssaobj$circular, ssaobj$length, ssaobj$length - ssaobj$window + 1)
     vmask <- .get(ssaobj, "fmask")
     vectors <- if (nv(ssaobj) >= max(idx)) ssaobj$V[, idx] else calc.v(ssaobj, idx)
   }
@@ -224,7 +223,6 @@ panel.eigenvectors.2d.ssa <- function(x, y, z, ssaobj, subscripts, at, ...,
 
     at <- seq(z.range[1], z.range[2], length.out = .cuts + 2)
   }
-  panel.levelplot(data$x, data$y, data$z, subscripts = seq_len(nrow(data)), at = at, ...)
 
   panel(data$x, data$y, data$z, subscripts = seq_len(nrow(data)),
         at = at, contour = FALSE, region = TRUE, ...)
@@ -253,8 +251,14 @@ panel.eigenvectors.2d.ssa <- function(x, y, z, ssaobj, subscripts, at, ...,
   d <- data.frame(row = idx, column = idx, z = idx)
 
   if (plot.contrib) {
+    # Check for F-orthogonality
+    isfcor <- .is.frobenius.orthogonal(x, idx, ...)
+    if (!isTRUE(isfcor))
+      warning(sprintf("Elementary matrices are not F-orthogonal (max F-cor is %s). Contributions can be irrelevant",
+                      format(isfcor, digits = 3)))
+
     total <- wnorm(x)^2
-    lambda <- round(100*x$lambda[idx]^2 / total, digits = 2);
+    sigma <- round(100*x$sigma[idx]^2 / total, digits = 2);
   }
 
   # Provide convenient defaults
@@ -286,11 +290,10 @@ panel.eigenvectors.2d.ssa <- function(x, y, z, ssaobj, subscripts, at, ...,
 
   do.call("levelplot",
           c(list(x = z ~ row * column | factor(z,
-                                               labels = if (!plot.contrib) z else paste(z, " (", lambda, "%)", sep = "")),
+                                               labels = if (!plot.contrib) z else paste(z, " (", sigma, "%)", sep = "")),
                  data = d, ssaobj = x,
                  what = what,
                  at = at,
-                 useRaster = dots$.useRaster,
                  panel = panel.eigenvectors.2d.ssa,
                  prepanel = prepanel.eigenvectors.2d.ssa),
             dots));

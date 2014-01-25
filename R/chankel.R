@@ -27,7 +27,7 @@
 
 .chmat <- function(x, fft.plan) {
   N <- x$length; L <- x$window; K <- N - L + 1
-  F <- .get(x, "F")
+  F <- .F(x)
 
   R <- new.hmat(Re(F), L = L, fft.plan = fft.plan)
   I <- new.hmat(Im(F), L = L, fft.plan = fft.plan)
@@ -62,22 +62,21 @@ decompose.cssa.svd <- function(x,
   N <- x$length; L <- x$window; K <- N - L + 1
 
   # Check, whether continuation of decomposition is requested
-  if (!force.continue && nlambda(x) > 0)
+  if (!force.continue && nsigma(x) > 0)
     stop("Continuation of decomposition is not supported for this method.")
 
   # Build hankel matrix
-  F <- .get(x, "F")
+  F <- .F(x)
   h <- hankel(F, L = L)
 
   # Do decomposition
   S <- svd(h)
 
   # Save results
-  .set(x, "lambda", S$d[seq_len(neig)])
-  if (!is.null(S$u))
-    .set(x, "U", S$u[, seq_len(neig), drop = FALSE])
-  if (!is.null(S$v))
-    .set(x, "V", S$v[, seq_len(neig), drop = FALSE])
+  .set.decomposition(x,
+                     sigma = S$d[seq_len(neig)],
+                     U = if (!is.null(S$u)) S$u[, seq_len(neig), drop = FALSE] else NULL,
+                     V = if (!is.null(S$v)) S$v[, seq_len(neig), drop = FALSE] else NULL)
 
   x
 }
@@ -119,11 +118,11 @@ decompose.cssa.eigen <- function(x, ...,
   N <- x$length; L <- x$window; K <- N - L + 1
 
   # Check, whether continuation of decomposition is requested
-  if (!force.continue && nlambda(x) > 0)
+  if (!force.continue && nsigma(x) > 0)
     stop("Continuation of decomposition is not supported for this method.")
 
   # Build hankel matrix
-  F <- .get(x, "F")
+  F <- .F(x)
 
   R <- hankel(Re(F), L = L)
   I <- hankel(Im(F), L = L)
@@ -139,8 +138,8 @@ decompose.cssa.eigen <- function(x, ...,
   S <- cssa.to.complex(sqrt(S$values), S$vectors)
 
   # Save results
-  .set(x, "lambda", S$d[1:neig])
-  .set(x, "U", S$u[, 1:neig, drop = FALSE])
+  .set.decomposition(x,
+                     sigma = S$d[1:neig], U = S$u[, 1:neig, drop = FALSE])
 
   x
 }
@@ -152,7 +151,7 @@ decompose.cssa.propack <- function(x,
   N <- x$length; L <- x$window; K <- N - L + 1
 
   # Check, whether continuation of decomposition is requested
-  if (!force.continue && nlambda(x) > 0)
+  if (!force.continue && nsigma(x) > 0)
     stop("Continuation of decompostion is not yet implemented for this method.")
 
   h <- .get.or.create.chmat(x)
@@ -161,11 +160,7 @@ decompose.cssa.propack <- function(x,
   S <- cssa.to.complex(S$d, S$u)
 
   # Save results
-  .set(x, "lambda", S$d)
-  if (!is.null(S$u))
-    .set(x, "U", S$u)
-  if (!is.null(S$v))
-    .set(x, "V", S$v)
+  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
 
   x
 }
@@ -177,18 +172,16 @@ decompose.cssa.nutrlan <- function(x,
 
   h <- .get.or.create.chmat(x)
 
-  lambda <- .get(x, "lambda", allow.null = TRUE)
-  U <- .get(x, "U", allow.null = TRUE)
+  sigma <- .sigma(x)
+  U <- .U(x)
 
   S <- trlan.svd(h, neig = 2*neig, ...,
-                 lambda = lambda, U = U)
+                 lambda = sigma, U = U)
 
   S <- cssa.to.complex(S$d, S$u)
 
   # Save results
-  .set(x, "lambda", S$d)
-  if (!is.null(S$u))
-    .set(x, "U", S$u)
+  .set.decomposition(x, sigma = S$d, U = S$u)
 
   x
 }
@@ -197,19 +190,20 @@ decompose.cssa.nutrlan <- function(x,
   c(2*x$window, 2*(x$length - x$window + 1))
 }
 
-.init.cssa <- function(x, ...) {
-  # Initialize FFT plan
-  .get.or.create.cfft.plan(x)
-}
-
 calc.v.cssa<- function(x, idx, env = .GlobalEnv, ...) {
-  lambda <- .get(x, "lambda")[idx]
-  U <- .get(x, "U")[, idx, drop = FALSE]
+  sigma <- .sigma[idx]
+
+  if (any(sigma <= .Machine$double.eps)) {
+    sigma[sigma <= .Machine$double.eps] <- Inf
+    warning("some sigmas are equal to zero. The corresponding vectors will be zeroed")
+  }
+
+  U <- .U[, idx, drop = FALSE]
   h <- .get.or.create.chmat(x)
 
   invisible(sapply(1:length(idx),
                    function(i) {
-                     v <- ematmul(h, c(Re(U[, i]), Im(U[, i])), transposed = TRUE) / lambda[i]
+                     v <- ematmul(h, c(Re(U[, i]), Im(U[, i])), transposed = TRUE) / sigma[i]
                      v[1:(length(v) / 2)] + 1i*v[-(1:(length(v) / 2))]
                    }))
 }
