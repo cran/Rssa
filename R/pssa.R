@@ -107,7 +107,7 @@ nspecial.pssa <- function(x) {
 }
 
 decompose.pssa.svd <- function(x,
-                               neig = min(50, L, K),
+                               neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
                                ...,
                                force.continue = FALSE) {
   # Compute special eigentriples if needed
@@ -115,13 +115,15 @@ decompose.pssa.svd <- function(x,
 
   N <- x$length; L <- x$window; K <- N - L + 1
   nspecial <- nspecial(x)
+  nPR <- .decomposition(x, "nPR")
+  nPL <- .decomposition(x, "nPL")
 
   # Check, whether continuation of decomposition is requested
   if (!force.continue && nsigma(x) > nspecial)
     stop("Continuation of decomposition is not supported for this method.")
 
-  # Build hankel matrix
-  h <- hankel(.F(x), L = L)
+  # Get trajectory matrix
+  h <- .trajectory.matrix(x)
 
   # Subtract special components
   sigma <- .sigma(x)[seq_len(nspecial)]
@@ -140,7 +142,7 @@ decompose.pssa.svd <- function(x,
 }
 
 decompose.pssa.eigen <- function(x,
-                                 neig = min(50, L, K),
+                                 neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
                                  ...,
                                  force.continue = FALSE) {
   # Compute special eigentriples if needed
@@ -148,6 +150,8 @@ decompose.pssa.eigen <- function(x,
 
   N <- x$length; L <- x$window; K <- N - L + 1
   nspecial <- nspecial(x)
+  nPR <- .decomposition(x, "nPR")
+  nPL <- .decomposition(x, "nPL")
 
   # Check, whether continuation of decomposition is requested
   if (!force.continue && nsigma(x) > nspecial)
@@ -159,7 +163,7 @@ decompose.pssa.eigen <- function(x,
 
   # We will compute (X - P_X) %*% t(X - P_X) = X %*% t(X) - P_X %*% t(X) - X %*% t(P_X) + P_X %*% t(P_X)
   # Get common Lcov matrix, i.e. X %*% t(X)
-  Lcov <- Lcov.matrix(.F(x), L = L, fft.plan = .get.or.create.fft.plan(x))
+  Lcov <- .Lcov.matrix(x)
   # Get hankel circulant
   h <- .get.or.create.hmat(x)
   # Compute X %*% t(P_X)
@@ -185,7 +189,7 @@ decompose.pssa.eigen <- function(x,
 }
 
 decompose.pssa.propack <- function(x,
-                                   neig = min(50, L, K),
+                                   neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
                                    ...,
                                    force.continue = FALSE) {
   # Compute special eigentriples if needed
@@ -193,6 +197,8 @@ decompose.pssa.propack <- function(x,
 
   N <- x$length; L <- x$window; K <- N - L + 1
   nspecial <- nspecial(x)
+  nPR <- .decomposition(x, "nPR")
+  nPL <- .decomposition(x, "nPL")
 
   # We will use special (first nspecial) entries below
   sigma <- .sigma(x)
@@ -219,14 +225,16 @@ decompose.pssa.propack <- function(x,
 }
 
 decompose.pssa.nutrlan <- function(x,
-                                   neig = min(50, L, K),
+                                   neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
                                    ...) {
   # Compute special eigentriples if needed
   .calc.projections(x)
 
   N <- x$length; L <- x$window; K <- N - L + 1
-
   nspecial <- nspecial(x)
+  nPR <- .decomposition(x, "nPR")
+  nPL <- .decomposition(x, "nPL")
+
   # We will use special (first nspecial) entries below
   sigma <- .sigma(x)
   U <- .U(x)
@@ -252,7 +260,7 @@ calc.v.pssa <- function(x, idx, ...) {
   N <- x$length; L <- x$window; K <- N - L + 1
   nV <- nv(x)
 
-  V <- matrix(NA_real_, K, length(idx))
+  V <- matrix(NA_real_, .traj.dim(x)[2], length(idx))
   idx.old <- idx[idx <= nV]
   idx.new <- idx[idx > nV]
 
@@ -326,8 +334,12 @@ enlarge.basis <- function(B, len, ...) {
 rforecast.pssa <- function(x, groups, len = 1,
                            base = c("reconstructed", "original"),
                            only.new = TRUE,
+                           reverse = FALSE,
                            ...,
                            drop = TRUE, drop.attributes = FALSE, cache = TRUE) {
+  if (is.shaped(x))
+    stop("`forecasting is not implemented for shaped SSA case yet")
+
   L <- x$window
   K <- x$length - L + 1
 
@@ -347,8 +359,20 @@ rforecast.pssa <- function(x, groups, len = 1,
   nonright.groups <- lapply(groups, function(group) setdiff(group, right.special.triples))
 
   # Calculate the LRR corresponding to groups
-  lf <- lrr(x, groups = nonright.groups, drop = FALSE)
+  lf <- lrr(x, groups = nonright.groups, reverse = reverse, drop = FALSE)
   stopifnot(length(lf) == length(groups))
+
+  rlf <- lapply(right.groups,
+                function(group) {
+                  lrr.default(.rowspan(x, group),
+                              reverse = reverse,
+                              orthonormalize = FALSE)
+                })
+  stopifnot(length(rlf) == length(groups))
+
+  rlf.all <- lrr.default(.rowspan(x, right.special.triples),
+                         reverse = reverse,
+                         orthonormalize = FALSE)
 
   sigma <- .sigma(x)
   U <- .U(x)
@@ -358,18 +382,25 @@ rforecast.pssa <- function(x, groups, len = 1,
   for (i in seq_along(groups)) {
     group <- groups[[i]]
     right.group <- if (identical(base, "reconstructed")) right.groups[[i]] else right.special.triples
+    right.lrr <- if (identical(base, "reconstructed")) rlf[[i]] else rlf.all
 
     # Calculate drifts
     Uet <- U[, right.group, drop = FALSE]
     Vet <- if (is.null(V)) calc.v(x, idx = right.group) else V[, right.group, drop = FALSE]
-    Vet <- enlarge.basis(Vet, len)
-    drift <- ((c(-lf[[i]], 1) %*% Uet) * sigma[right.group]) %*% t(Vet[K + seq_len(len),, drop = FALSE])
+    drift <- (((if (!reverse) c(-lf[[i]], 1) else c(1, -lf[[i]])) %*% Uet) *
+              sigma[right.group]) %*% t(Vet)
+    drift <- apply.lrr(drift, right.lrr,
+                       reverse = reverse,
+                       len = len, only.new = TRUE)
 
     # Calculate the forecasted values
     out[[i]] <- apply.lrr(if (identical(base, "reconstructed")) r[[i]] else .get(x, "F"),
-                          lf[[i]], len, only.new = only.new, drift = drift)
+                          lf[[i]],
+                          reverse = reverse,
+                          len, only.new = only.new, drift = drift)
     out[[i]] <- .apply.attributes(x, out[[i]],
                                   fixup = TRUE,
+                                  reverse = reverse,
                                   only.new = only.new, drop = drop.attributes)
   }
 
@@ -385,6 +416,9 @@ vforecast.pssa <- function(x, groups, len = 1,
                            only.new = TRUE,
                            ...,
                            drop = TRUE, drop.attributes = FALSE) {
+  if (is.shaped(x))
+    stop("`forecasting is not implemented for shaped SSA case yet")
+
   L <- x$window
   K <- x$length - L + 1
   N <- K + L - 1 + len + L - 1
@@ -407,7 +441,7 @@ vforecast.pssa <- function(x, groups, len = 1,
   V <- if (nv(x) >= desired) .V(x) else NULL
 
   # Grab the FFT plan
-  fft.plan <- fft.plan.1d(N)
+  fft.plan <- fft.plan.1d(N, L = L)
 
   out <- list()
   for (i in seq_along(groups)) {

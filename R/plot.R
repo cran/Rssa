@@ -20,8 +20,9 @@
 
 prepanel.eigenvectors <- function(x, y, ssaobj, symmetric = FALSE) {
   V <- ssaobj$U[, y]
-  U <- if (identical(x, y)) 1:length(V)
-       else ssaobj$U[, x]
+  if (is.complex(V)) V <- c(Re(V), Im(V))
+  U <- if (identical(x, y)) 1:length(V) else ssaobj$U[, x]
+  if (is.complex(U)) U <- c(Re(U), Im(U))
 
   res <- prepanel.default.xyplot(U, V)
   if (symmetric) {
@@ -35,8 +36,9 @@ prepanel.eigenvectors <- function(x, y, ssaobj, symmetric = FALSE) {
 
 panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   V <- ssaobj$U[, y]
-  U <- if (identical(x, y)) 1:length(V)
-       else ssaobj$U[, x]
+  if (is.complex(V)) V <- c(Re(V), Im(V))
+  U <- if (identical(x, y)) 1:length(V) else ssaobj$U[, x]
+  if (is.complex(U)) U <- c(Re(U), Im(U))
 
   if (ref) {
     panel.abline(h = 0, ..., reference = TRUE)
@@ -44,12 +46,17 @@ panel.eigenvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
       panel.abline(v = 0, ..., reference = TRUE)
   }
 
-  panel.xyplot(U, V, ...)
+  groups <- if (inherits(ssaobj, "cssa")) 2 else 1
+  panel.superpose(U, V,
+                  panel.groups = panel.xyplot,
+                  groups = gl(n = groups, length(V) / groups), ..., subscripts = 1:length(U))
 }
 
 prepanel.factorvectors <- function(x, y, ssaobj, symmetric = FALSE) {
   V <- if (y <= nv(ssaobj)) ssaobj$V[, y] else calc.v(ssaobj, idx = y)
+  if (is.complex(V)) V <- c(Re(V), Im(V))
   U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$V[, x] else calc.v(ssaobj, idx = x)
+  if (is.complex(U)) V <- c(Re(U), Im(U))
 
   res <- prepanel.default.xyplot(U, V)
   if (symmetric) {
@@ -63,7 +70,9 @@ prepanel.factorvectors <- function(x, y, ssaobj, symmetric = FALSE) {
 
 panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   V <- if (y <= nv(ssaobj)) ssaobj$V[, y] else calc.v(ssaobj, idx = y)
+  if (is.complex(V)) V <- c(Re(V), Im(V))
   U <- if (identical(x, y)) 1:length(V) else if (x <= nv(ssaobj)) ssaobj$V[, x] else calc.v(ssaobj, idx = x)
+  if (is.complex(U)) V <- c(Re(U), Im(U))
 
   if (ref) {
     panel.abline(h = 0, ..., reference = TRUE)
@@ -71,7 +80,10 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
       panel.abline(v = 0, ..., reference = TRUE)
   }
 
-  panel.xyplot(U, V, ...)
+  groups <- if (inherits(ssaobj, "cssa")) 2 else if (inherits(ssaobj, "mssa")) length(ssaobj$length) else 1
+  panel.superpose(U, V,
+                  panel.groups = panel.xyplot,
+                  groups = gl(n = groups, length(V) / groups), ..., subscripts = 1:length(U))
 }
 
 .defaults <- function(x, ...) {
@@ -99,6 +111,17 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
           c(list(x = B ~ A , data = d, ssaobj = x), dots))
 }
 
+.contribution <- function(x, idx, ...) {
+  ## Check for F-orthogonality
+  isfcor <- .is.frobenius.orthogonal(x, idx, ...)
+  if (!isTRUE(isfcor))
+    warning(sprintf("Elementary matrices are not F-orthogonal (max F-cor is %s). Contributions can be irrelevant",
+                    format(isfcor, digits = 3)))
+
+  total <- wnorm(x)^2
+  round(100*x$sigma[idx]^2 / total, digits = 2)
+}
+
 .plot.ssa.vectors <- function(x, ...)
   UseMethod(".plot.ssa.vectors")
 
@@ -111,19 +134,11 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
   dots <- list(...)
   what <- match.arg(what)
 
-  # FIXME: check for proper lengths
+  ## FIXME: check for proper lengths
   d <- data.frame(A = idx, B = idx)
-
-  if (plot.contrib) {
-    # Check for F-orthogonality
-    isfcor <- .is.frobenius.orthogonal(x, idx, ...)
-    if (!isTRUE(isfcor))
-      warning(sprintf("Elementary matrices are not F-orthogonal (max F-cor is %s). Contributions can be irrelevant",
-                      format(isfcor, digits = 3)))
-
-    total <- wnorm(x)^2
-    sigma <- round(100*x$sigma[idx]^2 / total, digits = 2)
-  }
+  plot.formula <-
+    A ~ B | factor(A,
+                   labels = if (!plot.contrib) A else paste(A, " (", .contribution(x, idx, ...), "%)", sep = ""))
 
   # Provide convenient defaults
   dots <- .defaults(dots,
@@ -138,8 +153,7 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
                     ref = TRUE)
 
   do.call("xyplot",
-          c(list(x = A ~ B | factor(A,
-                   labels = if (!plot.contrib) A else paste(A, " (", sigma, "%)", sep = "")),
+          c(list(x = plot.formula,
                  data = d, ssaobj = x,
                  panel = if (identical(what, "eigen")) panel.eigenvectors else panel.factorvectors,
                  prepanel = if (identical(what, "eigen")) prepanel.eigenvectors else prepanel.factorvectors),
@@ -147,6 +161,7 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
 }
 
 .plot.ssa.vectors.toeplitz.ssa <- `.plot.ssa.vectors.1d.ssa`
+.plot.ssa.vectors.cssa <- `.plot.ssa.vectors.1d.ssa`
 
 .plot.ssa.paired <- function(x, ...,
                              what = c("eigen", "factor"),
@@ -156,18 +171,10 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
 
   # FIXME: check for proper lengths
   d <- data.frame(A = idx, B = idy)
-
-  if (plot.contrib) {
-    # Check for F-orthogonality
-    isfcor <- .is.frobenius.orthogonal(x, idx, ...)
-    if (!isTRUE(isfcor))
-      warning(sprintf("Elementary matrices are not F-orthogonal (max F-cor is %s). Contributions can be irrelevant",
-                      format(isfcor, digits = 3)))
-
-    total <- wnorm(x)^2
-    sigmax <- round(100*x$sigma[idx]^2 / total, digits = 2)
-    sigmay <- round(100*x$sigma[idy]^2 / total, digits = 2)
-  }
+  plot.formula <- A ~ B | factor(A,
+                                 labels =
+                                 if (!plot.contrib) paste(A, "vs", B)
+                                 else paste(A, " (", .contribution(x, idx, ...), "%) vs ", B, " (", .contribution(x, idy, ...), "%)", sep = ""))
 
   # Provide convenient defaults
   dots <- .defaults(dots,
@@ -182,9 +189,7 @@ panel.factorvectors <- function(x, y, ssaobj, ..., ref = FALSE) {
                     ref = TRUE)
 
   do.call("xyplot",
-          c(list(x = A ~ B | factor(A,
-                   labels = if (!plot.contrib) paste(A, "vs", B)
-                   else paste(A, " (", sigmax, "%) vs ", B, " (", sigmay, "%)", sep = "")),
+          c(list(x = plot.formula,
                  data = d, ssaobj = x,
                  panel = if (identical(what, "eigen")) panel.eigenvectors else panel.factorvectors,
                  prepanel = if (identical(what, "eigen")) prepanel.eigenvectors else prepanel.factorvectors),
@@ -254,9 +259,14 @@ panel.series <- function(x, y, recon, ..., ref = FALSE) {
 
 .plot.ssa.series.toeplitz.ssa <- .plot.ssa.series.1d.ssa
 
-panel.levelplot.wcor <- function(x, y, z, ..., grid, .useRaster = FALSE) {
+panel.levelplot.wcor <- function(x, y, z, at, ..., grid, .useRaster = FALSE) {
   panel <- if (.useRaster) panel.levelplot.raster else panel.levelplot
-  panel(x, y, z, ...)
+
+  # Cutoff outstanding values
+  z[z < min(at)] <- min(at)
+  z[z > max(at)] <- max(at)
+
+  panel(x, y, z, at = at, ...)
 
   if (!is.list(grid))
     grid <- list(h = grid, v = grid)
@@ -268,8 +278,10 @@ panel.levelplot.wcor <- function(x, y, z, ..., grid, .useRaster = FALSE) {
 plot.wcor.matrix <- function(x,
                              grid = c(),
                              ...,
+                             col = grey(c(1, 0)),
                              cuts = 20,
-                             zlim = range(abs(x), 0, 1)) {
+                             zlim = range(abs(x), 0, 1),
+                             at) {
   # Provide convenient defaults
   dots <- list(...)
   dots <- .defaults(dots,
@@ -280,8 +292,9 @@ plot.wcor.matrix <- function(x,
                     aspect = "iso",
                     xlim = rownames(x),
                     ylim = colnames(x),
-                    par.settings = list(regions = list(col = colorRampPalette(grey(c(1, 0))))),
                     useRaster = TRUE)
+  dots <- modifyList(dots,
+                     list(par.settings = list(regions = list(col = colorRampPalette(col)))))
 
   data <- expand.grid(row = seq_len(nrow(x)), column = seq_len(ncol(x)))
   data$x <- as.vector(as.numeric(x))
@@ -289,10 +302,13 @@ plot.wcor.matrix <- function(x,
   # Rename args for transfer to panel function
   names(dots)[names(dots) == "useRaster"] <- ".useRaster"
 
+  if (missing(at))
+    at <- pretty(zlim, n = cuts)
+
   do.call("levelplot",
           c(list(x = abs(x) ~ row * column,
                  data = data,
-                 at = seq(zlim[1], zlim[2], length.out = cuts + 2),
+                 at = at,
                  panel = panel.levelplot.wcor,
                  grid = grid),
             dots))

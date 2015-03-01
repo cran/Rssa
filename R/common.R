@@ -167,7 +167,7 @@
   .decomposition(x, "V")
 
 .rowspan.ssa <- function(x, idx)
-  .rowspan(.decomposition(x), idx)
+  calc.v(x, idx)
 
 .sigma.ssa <- function(x)
   .decomposition(x, "sigma")
@@ -206,23 +206,37 @@ nspecial.ssa <- function(x)
     if (!is.null(cls)) class(x) <- cls
   }
 
-  if (any(is.na(x)))
-    stop("time series contains internal NAs")
-
   x
 }
 
-.to.series.list <- function(x, na.rm = TRUE) {
-  # Note that this will correctly remove leading and trailing NA, but will fail for internal NA's
-  NA.fun <- (if (na.rm) .na.omit else identity)
-  if (is.list(x)) {
-    res <- lapply(x, NA.fun)
-  } else {
-    # Coerce input to matrix. This will "normalize" cases like vector / data frame as input
+.to.series.list <- function(x, na.rm = TRUE, template = NULL) {
+  if (inherits(x, "series.list"))
+    return(x)
+
+  # Coerce to list if necessary
+  if (!is.list(x)) {
     if (!is.matrix(x))
       x <- as.matrix(x)
 
-    res <- lapply(seq_len(ncol(x)), function(i) NA.fun(x[, i]))
+    x <- lapply(seq_len(ncol(x)), function(i) x[, i])
+  }
+
+  # Note that this will correctly remove leading and trailing NA, but will fail for internal NA's
+  if (is.null(template)) {
+    # If no template, remove leading and trailing NAs
+    NA.fun <- (if (na.rm) .na.omit else identity)
+    res <- lapply(x, NA.fun)
+  } else {
+    # Elsewise omit elements from the same places as in template series (it's necessary for correct conversion to inner format)
+    res <- lapply(seq_along(x),
+                  function(i) {
+                    res <- x[[i]]
+                    remove <- attr(res, "na.action") <- attr(template[[i]], "na.action")
+                    if (!is.null(remove))
+                      res <- res[-remove]
+
+                    res
+                  })
   }
 
   class(res) <- "series.list"
@@ -309,8 +323,6 @@ clone <- function(x, ...)
   UseMethod("clone");
 reconstruct <- function(x, ...)
   UseMethod("reconstruct");
-clusterify <- function(x, ...)
-  UseMethod("clusterify");
 calc.v <- function(x, ...)
   UseMethod("calc.v");
 wnorm <- function(x, ...)

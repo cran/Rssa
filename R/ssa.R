@@ -48,21 +48,38 @@ new.ssa <- function(...) {
 ssa <- function(x,
                 L = (N + 1) %/% 2,
                 neig = NULL,
-                mask = NULL,
-                wmask = NULL,
-                column.projector = "none",
-                row.projector = "none",
+                mask = NULL, wmask = NULL,
+                column.projector = "none", row.projector = "none",
                 ...,
-                kind = c("1d-ssa", "2d-ssa", "toeplitz-ssa", "mssa", "cssa"),
+                kind = c("1d-ssa", "2d-ssa", "nd-ssa", "toeplitz-ssa", "mssa", "cssa"),
                 circular = FALSE,
                 svd.method = c("auto", "nutrlan", "propack", "svd", "eigen"),
                 force.decompose = TRUE) {
   svd.method <- match.arg(svd.method)
-  kind <- match.arg(kind)
   xattr <- attributes(x)
   iattr <- NULL
   # Grab class separately. This way we will capture the inherit class as well
   xclass <- class(x)
+
+  call <- match.call(); cargs <- as.list(call)[-1]
+  ## wmask is special and will be treated separately later
+  cargs$wmask <- NULL
+  ecall <- do.call("call", c("ssa", lapply(cargs, eval, parent.frame())))
+
+  ## Provide some sane defaults, e.g. complex inputs should default to cssa
+  if (missing(kind)) {
+    if (is.complex(x))
+      kind <- "cssa"
+    else if (inherits(x, "mts") || inherits(x, "data.frame") || inherits(x, "list") || inherits(x, "series.list"))
+      kind <- "mssa"
+    else if (is.matrix(x))
+      kind <- "2d-ssa"
+    else if (is.array(x))
+      kind <- "nd-ssa"
+    else
+      kind <- "1d-ssa"
+  }
+  kind <- match.arg(kind)
 
   # Do the fixups depending on the kind of SSA.
   if (identical(kind, "1d-ssa") || identical(kind, "toeplitz-ssa")) {
@@ -70,15 +87,22 @@ ssa <- function(x,
       warning("Incorrect argument length: length(circular) > 1, the first value will be used")
     if (length(circular) != 1)
       circular <- circular[1]
-    if (circular && identical(kind, "1d-ssa"))
-      stop("Circular variant of 1d SSA isn't implemented yet")
 
-    # Coerce input to vector if necessary
-    if (!is.vector(x))
-      x <- as.vector(x)
+    # Coerce input to vector (we have already saved attrs)
+    x <- as.vector(x)
 
     N <- length(x)
-    K <- N - L + 1
+
+    mask <- if (is.null(mask)) !is.na(x) else mask & !is.na(x)
+
+    ecall$wmask <- wmask
+    if (is.null(wmask)) {
+      wmask <- rep(TRUE, L)
+    } else {
+      L <- length(wmask)
+    }
+
+    K <- if (circular) N else N - L + 1
 
     if (is.null(neig))
       neig <- min(50, L, K)
@@ -87,7 +111,25 @@ ssa <- function(x,
     if (identical(svd.method, "auto"))
       svd.method <- .determine.svd.method(L, K, neig, ...)
 
-    wmask <- fmask <- weights <- NULL
+    fmask <- .factor.mask.1d(mask, wmask, circular = circular)
+
+    if (!all(wmask) || !all(fmask) || any(circular)) {
+      weights <- .field.weights.1d(wmask, fmask, circular = circular)
+
+      ommited <- sum(mask & (weights == 0))
+      if (ommited > 0)
+        warning(sprintf("Some field elements were not covered by shaped window. %d elements will be ommited", ommited))
+
+      if (all(weights == 0))
+        warning("Nothing to decompose: the given field shape is empty")
+    } else {
+      weights <- NULL
+    }
+
+    if (all(wmask))
+      wmask <- NULL
+    if (all(fmask))
+      fmask <- NULL
 
     if (!identical(column.projector, "none") || !identical(row.projector, "none")) {
       # Compute projectors
@@ -98,50 +140,68 @@ ssa <- function(x,
       stopifnot(nrow(column.projector) == L)
       stopifnot(nrow(row.projector) == K)
 
+      # Shape projectors if needed
+      if (!is.null(wmask)) {
+        column.projector <- column.projector[wmask,, drop = FALSE]
+        column.projector <- qr.Q(qr(column.projector))
+      }
+      if (!is.null(fmask)) {
+        row.projector <- row.projector[fmask,, drop = FALSE]
+        row.projector <- qr.Q(qr(row.projector))
+      }
+
+      # Fix neig maximum value
+      # TODO  Use `.traj.dim` in such places (instead of L and K)
+      neig <- min(neig, min(L, K) - max(ncol(column.projector), ncol(row.projector)))
+
       # ProjectionSSA is just a special case of 1d-ssa
       kind <- c("pssa", "1d-ssa")
     } else {
       column.projector <- row.projector <- NULL
     }
-  } else if (identical(kind, "2d-ssa")) {
-    if (length(circular) > 2)
-      warning("Incorrect argument length: length(circular) > 2, two leading values will be used")
-    if (length(circular) != 2)
-      circular <- rep(circular, 2)[1:2]
-
-    # Coerce input to matrix if necessary
-    if (!is.matrix(x))
-      x <- as.matrix(x)
-
-    N <- dim(x);
-
-    if (is.null(mask)) {
-      mask <- !is.na(x)
-    } else {
-      mask <- mask & !is.na(x)
-    }
+  } else if (identical(kind, "2d-ssa") || identical(kind, "nd-ssa")) {
+    # Coerce input to array if necessary
+    if (!is.array(x))
+      x <- as.array(x)
+    N <- dim(x)
 
     wmask <- .fiface.eval(substitute(wmask),
                           envir = parent.frame(),
                           circle = circle.mask,
                           triangle = triangle.mask)
+    ecall$wmask <- wmask
     if (is.null(wmask)) {
-      wmask <- matrix(TRUE, L[1], L[2])
+      wmask <- array(TRUE, dim = L)
     } else {
       L <- dim(wmask)
     }
 
+    # Fix rank (ndims) of x
+    rank <- length(L)
+    if (length(dim(x)) < rank)
+      dim(x) <- c(dim(x), rep(1, rank - length(dim(x))))
+
+    mask <- if (is.null(mask)) !is.na(x) else mask & !is.na(x)
+
+    # Check `circular' argument
+    if (length(circular) > rank)
+      warning("Incorrect argument length: length(circular) > rank, the leading values will be used")
+    if (length(circular) != rank)
+      circular <- circular[(seq_len(rank) - 1) %% length(circular) + 1]
+
+    K <- ifelse(circular, N, N - L + 1)
+
     if (is.null(neig))
-      neig <- min(50, prod(L), prod(N - L + 1))
+      neig <- min(50, prod(L), prod(K))
 
     # Fix SVD method.
     if (identical(svd.method, "auto"))
-      svd.method <- .determine.svd.method(prod(L), prod(N - L + 1), neig, ..., svd.method = "nutrlan")
+      svd.method <- .determine.svd.method(prod(L), prod(K), neig, ..., svd.method = "nutrlan")
 
-    fmask <- factor.mask(mask, wmask, circular = circular)
+    fmask <- .factor.mask.2d(mask, wmask, circular = circular)
 
     if (!all(wmask) || !all(fmask) || any(circular)) {
-      weights <- field.weights(wmask, fmask, circular = circular)
+      weights <- .field.weights.2d(wmask, fmask, circular = circular)
 
       ommited <- sum(mask & (weights == 0))
       if (ommited > 0) {
@@ -149,7 +209,7 @@ ssa <- function(x,
       }
 
       if (all(weights == 0)) {
-        stop("Nothing to decompose: the given field shape is empty")
+        warning("Nothing to decompose: the given field shape is empty")
       }
     } else {
       weights <- NULL
@@ -161,6 +221,12 @@ ssa <- function(x,
       fmask <- NULL
 
     column.projector <- row.projector <- NULL
+
+    # 2d-SSA is just a special case of nd-ssa
+    if (length(N) == 2)
+      kind <- c("2d-ssa", "nd-ssa")
+    else
+      kind <- "nd-ssa"
   } else if (identical(kind, "mssa")) {
     if (any(circular))
       stop("Circular variant of multichannel SSA isn't implemented yet")
@@ -191,14 +257,16 @@ ssa <- function(x,
       svd.method <- .determine.svd.method(L, sum(N - L + 1), neig, ...)
 
     wmask <- NULL
-    if (!all(N == max(N))) {
+    if (!all(N == max(N)) || any(sapply(x, anyNA))) {
       K <- N - L + 1
 
       weights <- matrix(0, max(N), length(N))
       fmask <- matrix(FALSE, max(K), length(N))
+      wmask <- rep(TRUE, L)
       for (idx in seq_along(N)) {
-        weights[seq_len(N[idx]), idx] <- .hweights.default(N[idx], L)
-        fmask[seq_len(K[idx]), idx] <- TRUE
+        mask <- !is.na(x[[idx]])
+        fmask[seq_len(K[idx]), idx] <- .factor.mask.1d(mask, wmask)
+        weights[seq_len(N[idx]), idx] <- .field.weights.1d(wmask, fmask[seq_len(K[idx]), idx])
       }
     } else {
       fmask <- weights <- NULL
@@ -233,7 +301,8 @@ ssa <- function(x,
   # Create information body
   this <- list(length = N,
                window = L,
-               call = match.call(),
+               call = call,
+               ecall = ecall,
                kind = kind,
                series = deparse(substitute(x)),
                svd.method = svd.method)
@@ -280,8 +349,12 @@ ssa <- function(x,
   .init(this)
 
   # Decompose, if necessary
-  if (force.decompose)
+  if (force.decompose) {
+    if (!is.null(weights) && all(weights == 0))
+      stop("Nothing to decompose: the given field shape is empty")
+
     this <- decompose(this, neig = neig, ...);
+  }
 
   this;
 }
@@ -332,8 +405,9 @@ cleanup <- function(x) {
 }
 
 .apply.attributes.default <- function(x, F,
-                                      fixup = FALSE,
-                                      only.new = TRUE, drop = FALSE) {
+                                      fixup = FALSE, only.new = TRUE,
+                                      reverse = FALSE,
+                                      drop = FALSE) {
   a <- (if (drop) NULL else .get(x, "Fattr"))
   cls <- (if (drop) NULL else .get(x, "Fclass"))
 
@@ -341,9 +415,16 @@ cleanup <- function(x) {
      # Try to guess the indices of known time series classes
     if ("ts" %in% cls) {
       tsp <- a$tsp
-      return (ts(F,
-                 start = if (only.new) tsp[2] + 1/tsp[3] else tsp[1],
-                 frequency = tsp[3]))
+      return (if (!reverse)
+                ts(F,
+                   start = if (only.new) tsp[2] + 1/tsp[3] else tsp[1],
+                   frequency = tsp[3])
+              else
+                ts(F,
+                   end = if (only.new) tsp[1] - 1/tsp[3] else tsp[2],
+                   frequency = tsp[3])
+
+              )
     }
   } else {
     attributes(F) <- a
@@ -393,7 +474,9 @@ reconstruct.ssa <- function(x, groups, ...,
     } else if (length(cached)) {
       out[[i]] <- .get.series(x, cached)
     } else {
-      stop("group cannot be empty")
+      out[[i]] <- 0. * .F(x)
+      if (!is.null(x$weights))
+        out[[i]][x$weights == 0] <- NA
     }
 
     # Propagate attributes (e.g. dimension for 2d-SSA)
@@ -480,6 +563,18 @@ nsigma <- function(x) {
   length(.sigma(x))
 }
 
+is.shaped <- function(x) {
+  ## Easy case: non-null masks in case of non-mssa
+  if ((!is.null(x$wmask) || !is.null(x$fmask) || !is.null(x$weights)) && !inherits(x, "mssa"))
+    return (TRUE)
+
+  ## In case of mssa, check whether we have any zero meaningfull weights
+  if (inherits(x, "mssa") && any(.hweights(x) == 0))
+    return (TRUE)
+
+  return (FALSE)
+}
+
 clone.ssa <- function(x, copy.storage = TRUE, copy.cache = TRUE, ...) {
   obj <- .clone(x, copy.storage = copy.storage)
 
@@ -492,24 +587,6 @@ clone.ssa <- function(x, copy.storage = TRUE, copy.cache = TRUE, ...) {
     cleanup(obj)
 
   obj;
-}
-
-clusterify.ssa <- function(x, group, nclust = length(group) / 2,
-                           ...,
-                           type = c("wcor"), cache = TRUE) {
-  type <- match.arg(type)
-
-  if (missing(group))
-    group <- as.list(1:nsigma(x));
-
-  if (identical(type, "wcor")) {
-    w <- wcor(x, groups = group, ..., cache = cache);
-    g <- clusterify(w, nclust = nclust, ...);
-    out <- lapply(g, function(idx) unlist(group[idx]));
-  } else {
-    stop("Unsupported clusterification method!");
-  }
-  out;
 }
 
 '$.ssa' <- function(x, name) {

@@ -1,11 +1,8 @@
 \name{wcor}
 \alias{wcor}
-\alias{wcor.1d.ssa}
-\alias{wcor.2d.ssa}
-\alias{wcor.toeplitz.ssa}
-\alias{wcor.default}
-\alias{wcor.mssa}
+\alias{wcor.ssa}
 \alias{wcor.ossa}
+\alias{wcor.default}
 \alias{plot.wcor.matrix}
 
 \title{Calculate the W-correlation matrix}
@@ -13,17 +10,16 @@
   Function calculates the W-correlation matrix for the series.
 }
 \usage{
-\method{wcor}{1d.ssa}(x, groups, \dots, cache = TRUE)
-\method{wcor}{2d.ssa}(x, groups, \dots, cache = TRUE)
-\method{wcor}{toeplitz.ssa}(x, groups, \dots, cache = TRUE)
-\method{wcor}{mssa}(x, groups, \dots, cache = TRUE)
-\method{wcor}{ossa}(x, groups, \dots, cache = TRUE)
+\method{wcor}{ssa}(x, groups, Fs, \dots, cache = TRUE)
+\method{wcor}{ossa}(x, groups, Fs, \dots, cache = TRUE)
 \method{wcor}{default}(x, L = (N + 1) \%/\% 2, \dots, weights = NULL)
 \method{plot}{wcor.matrix}(x,
      grid = c(),
      \dots,
+     col = grey(c(1, 0)),
      cuts = 20,
-     zlim = range(abs(x), 0, 1))
+     zlim = range(abs(x), 0, 1),
+     at)
 }
 
 \arguments{
@@ -34,6 +30,8 @@
   \item{weights}{additional weights}
   \item{groups}{list of numeric vectors, indices of elementary components
     used for reconstruction.}
+  \item{Fs}{list of series (e.g. 'ssa.reconstruction' object) for W-cor computation.
+    If missing, reconstructed series from the input 'ssa' object \code{x} will be used.}
   \item{\dots}{further arguments passed to \code{reconstruct} routine
   for \code{wcor} or to \code{plot} for \code{plot.wcor.matrix}}
   \item{cache}{logical, if 'TRUE' then intermediate results will be
@@ -44,10 +42,15 @@
     Also this argument can be list of two numeric vectors
     with names 'x' and 'y', for control vertical and horizontal
     grid lines separately.}
+  \item{col}{color vector for colorscale,
+    given by two or more colors,
+    the first color corresponds to the minimal value,
+    while the last one corresponds to the maximal value (will be interpolated by \code{colorRamp})}
   \item{cuts}{integer, the number of levels the range of W-cor
     values will be divided into.}
-  \item{zlim}{range of displaying W-cor values.
-    Values outside the range will be not shown.}
+  \item{zlim}{range of displayed W-cor values.}
+  \item{at}{A numeric vector giving breakpoints along the range of the image.
+    if missing, will be evaluated automatically (see description of the \code{cuts} argument).}
 }
 \details{
   W-correlation matrix is a standard way of checking for weak

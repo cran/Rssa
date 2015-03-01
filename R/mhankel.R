@@ -34,7 +34,10 @@
   else
     mask <- matrix(TRUE, max(N), length(N))
 
-  field[mask] <- unlist(F)
+  for (idx in seq_along(N)) {
+    imask <- which(mask[seq_len(N[idx]), idx])
+    field[imask, idx] <- F[[idx]][imask]
+  }
 
   new.hbhmat(field, L = c(L, 1),
              wmask = NULL,
@@ -160,12 +163,12 @@ calc.v.mssa<- function(x, idx, ...) {
   h <- .get.or.create.hbhmat(x)
   storage.mode(U) <- storage.mode(V) <- "double"
   F <- .Call("hbhankelize_one_fft", U, V, h)
-  w <- .get(x, "weights")
-  if (!is.null(w)) {
-    F <- F[w > 0]
-  }
 
-  F
+  ## FIXME: This is ugly
+  N <- x$length; mN <- max(N)
+  cidx <- unlist(lapply(seq_along(N), function(idx) seq_len(N[idx]) + mN * (idx - 1)))
+
+  F[cidx]
 }
 
 .elseries.mssa <- function(x, idx, ...) {
@@ -378,11 +381,15 @@ plot.mssa.reconstruction <- function(x,
 }
 
 xyplot.matrix <- function(x, ..., outer = TRUE) {
+  dots <- list(...)
   x <- cbind(1:nrow(x), as.data.frame(x))
   stopifnot(nrow(x) > 1)
   nms <- sprintf("`%s`", colnames(x))
   form <- sprintf("%s ~ %s", paste(nms[-1], collapse = "+"), nms[1])
-  xyplot(as.formula(form), data = x, ..., outer = outer)
+  # Provide convenient defaults
+  dots <- .defaults(dots,
+                    as.table = TRUE)
+  do.call(xyplot, c(list(as.formula(form), data = x), dots, list(outer = outer)))
 }
 
 .plot.ssa.vectors.mssa <- function(x, ...,
@@ -409,11 +416,6 @@ xyplot.matrix <- function(x, ..., outer = TRUE) {
     L <- x$window
     K <- N - L + 1
     F <- .F(x)
-
-    if (plot.contrib) {
-      total <- wnorm(x)^2
-      sigma <- round(100*x$sigma[idx]^2 / total, digits = 2)
-    }
 
     cK <- c(0, cumsum(K))
     res <- list()
@@ -455,7 +457,7 @@ xyplot.matrix <- function(x, ..., outer = TRUE) {
     attr(res, "series") <- .apply.attributes(x, oF,
                                              fixup = TRUE, only.new = FALSE, drop = FALSE)
 
-    names(res) <- if (!plot.contrib) idx else paste(idx, " (", sigma, "%)", sep = "")
+    names(res) <- if (!plot.contrib) idx else paste(idx, " (", .contribution(x, idx, ...), "%)", sep = "")
 
     # Provide convenient defaults
     dots <- .defaults(dots,

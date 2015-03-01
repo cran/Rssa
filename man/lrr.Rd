@@ -15,9 +15,10 @@
 }
 
 \usage{
-\method{lrr}{1d.ssa}(x, groups, \dots, drop = TRUE)
-\method{lrr}{toeplitz.ssa}(x, groups, \dots, drop = TRUE)
-\method{lrr}{default}(x, eps = sqrt(.Machine$double.eps), \dots, orthonormalize = TRUE)
+\method{lrr}{1d.ssa}(x, groups, reverse = FALSE, \dots, drop = TRUE)
+\method{lrr}{toeplitz.ssa}(x, groups, reverse = FALSE, \dots, drop = TRUE)
+\method{lrr}{default}(x, eps = sqrt(.Machine$double.eps),
+        reverse = FALSE, \dots, orthonormalize = TRUE)
 \method{roots}{lrr}(x, ..., method = c("companion", "polyroot"))
 \method{plot}{lrr}(x, ..., raw = FALSE)
 }
@@ -26,6 +27,7 @@
   \item{x}{SSA object holding the decomposition or matrix containing the basis vectors in columns
     for \code{lrr} call or 'lrr' object itself for other function calls}
   \item{groups}{list, the grouping of eigentriples used to derive the LRR}
+  \item{reverse}{logical, if 'TRUE', then LRR is assumed to go back}
   \item{\dots}{further arguments to be passed to \code{decompose} or
     \code{plot} call, if necessary}
   \item{drop}{logical, if 'TRUE' then the result is coerced to lrr object
@@ -57,6 +59,9 @@
 
   For \code{lrr.ssa} case the matrix \eqn{U} used is the matrix of basis
   vector corresponding to the selected elementary series.
+
+  For \code{reverse = 'TRUE'} everything is the same, besides the
+  last coordinate substituted for the first coordinate.
 }
 
 \value{

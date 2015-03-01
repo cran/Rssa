@@ -32,10 +32,13 @@ wcor.default <- function(x, L = (N + 1) %/% 2, ..., weights = NULL) {
   }
 
   # Compute w-covariation
-  cov <- crossprod(weights * x, x)
+  cov <- crossprod(weights * Conj(x), x)
 
   # Convert to correlations
-  cor <- cov2cor(cov)
+  Is <- sqrt(1 / abs(diag(cov)))
+  cor <- cov
+  cor[] <- Is * cov * rep(Is, each = nrow(cov))
+  cor[cbind(seq_len(nrow(cov)), seq_len(ncol(cov)))] <- 1
 
   # Fix possible numeric error
   cor[cor > 1] <- 1; cor[cor < -1] <- -1
@@ -47,29 +50,24 @@ wcor.default <- function(x, L = (N + 1) %/% 2, ..., weights = NULL) {
   cor
 }
 
-wcor.toeplitz.ssa <- wcor.1d.ssa <- function(x, groups, ..., cache = TRUE) {
-  N <- prod(x$length)
-  if (missing(groups))
-    groups <- as.list(1:nsigma(x))
+wcor.ssa <- function(x, groups, Fs, ..., cache = TRUE) {
+  # Get conversion
+  conversion <- .inner.fmt.conversion(x)
 
-  # Compute reconstruction.
-  F <- reconstruct(x, groups, ..., cache = cache)
-  mx <- matrix(unlist(F), nrow = N, ncol = length(groups))
-  colnames(mx) <- names(F)
+  if (!missing(Fs) && !missing(groups)) {
+    stop("Only one of `groups' and `Fs' shoud be passed")
+  }
 
-  # Finally, compute w-correlations and return
-  wcor.default(mx, weights = .hweights(x))
-}
+  if (missing(Fs)) {
+    if (missing(groups))
+      groups <- as.list(1:nsigma(x))
 
-wcor.2d.ssa <- function(x, groups, ..., cache = TRUE) {
-  N <- prod(x$length)
-  if (missing(groups))
-    groups <- as.list(1:nsigma(x))
+    # Compute reconstruction.
+    Fs <- reconstruct(x, groups = groups, ..., cache = cache)
+  }
 
-  # Compute reconstruction.
-  F <- reconstruct(x, groups, ..., cache = cache)
-  mx <- matrix(unlist(F), nrow = N, ncol = length(groups))
-  colnames(mx) <- names(F)
+  Fs <- lapply(Fs, function(x) as.vector(unlist(conversion(x))))
+  mx <- do.call(cbind, Fs)
 
   # Get weights
   w <- .hweights(x)
@@ -84,34 +82,8 @@ wcor.2d.ssa <- function(x, groups, ..., cache = TRUE) {
   wcor.default(mx, weights = w)
 }
 
-wcor.mssa <- function(x, groups, ..., cache = TRUE) {
-  N <- sum(x$length)
-  if (missing(groups))
-    groups <- as.list(1:nsigma(x))
-
-  # Compute reconstruction.
-  F <- lapply(reconstruct(x, groups, ..., cache = cache), .to.series.list)
-  mx <- matrix(unlist(F), nrow = N, ncol = length(groups))
-  colnames(mx) <- names(F)
-
-  # Finally, compute w-correlations and return
-  wcor.default(mx, weights = .hweights(x))
-}
-
-wcor.ssa <- function(x, groups, ..., cache = TRUE)
-  stop("Unsupported SVD method for SSA!")
-
 wcor <- function(x, ...) {
   UseMethod("wcor")
-}
-
-clusterify.wcor.matrix <- function(x,
-                                   nclust = N,
-                                   ...,
-                                   dist = function(X) (1 - X) / 2) {
-  N <- nrow(x)
-  h <- cutree(hclust(as.dist(dist(x)), ...), k = nclust)
-  split(1:N, h)
 }
 
 .hweights <- function(x, ...) {
@@ -130,27 +102,32 @@ clusterify.wcor.matrix <- function(x,
     rep(1, N)
 }
 
+.hweightsn <- function(N, L) {
+  stopifnot(length(N) == length(L))
+  ws <- lapply(seq_along(N),
+               function(r) .hweights.default(N[r], L[r]))
+
+  if (length(N) > 1)
+    for (r in 2:length(N))
+      ws[[1]] <- as.vector(tcrossprod(ws[[1]], ws[[r]]))
+
+  ws[[1]]
+}
+
 .hweights.matrix <- function(x, L = (N + 1) %/% 2, ...) {
   N <- nrow(x)
 
   .hweights.default(N, L)
 }
 
-.hweights.1d.ssa <- .hweights.toeplitz.ssa <- function(x, ...) {
-  .hweights.default(x$length, x$window)
-}
-
-.hweights.2d.ssa <- function(x, ...) {
+.hweights.1d.ssa <- .hweights.toeplitz.ssa <- .hweights.cssa <- .hweights.nd.ssa <- function(x, ...) {
   w <- .get(x, "weights")
 
   if (!is.null(w)) {
     # Just return stored weights
     w
   } else {
-    N <- x$length; L <- x$window
-
-    as.vector(tcrossprod(.hweights.default(N[1], L[1]),
-                         .hweights.default(N[2], L[2])))
+    .hweightsn(x$length, x$window)
   }
 }
 
@@ -158,8 +135,10 @@ clusterify.wcor.matrix <- function(x,
   w <- .get(x, "weights")
 
   if (!is.null(w)) {
-    # Return positive weights
-    w[w > 0]
+    ## Return meaningfull weights
+    N <- x$length; mN <- max(N)
+    cidx <- unlist(lapply(seq_along(N), function(idx) seq_len(N[idx]) + mN * (idx - 1)))
+    w[cidx]
   } else {
     N <- x$length; L <- x$window
 
@@ -167,30 +146,22 @@ clusterify.wcor.matrix <- function(x,
   }
 }
 
-wnorm.default <- function(x, L = (N + 1) %/% 2, ...) {
+wnorm.default <- wnorm.complex <- function(x, L = (N + 1) %/% 2, ...) {
   N <- length(x)
 
   # Compute weights
   w <- .hweights.default(x, L)
 
   # Compute wnorm
-  sqrt(sum(w * x^2))
+  sqrt(sum(w * abs(x)^2))
 }
 
-wnorm.1d.ssa <- wnorm.toeplitz.ssa <- function(x, ...) {
+wnorm.nd.ssa <- wnorm.1d.ssa <- wnorm.toeplitz.ssa <- wnorm.cssa <- wnorm.mssa <- function(x, ...) {
   # Compute weights
   w <- .hweights(x)
 
-  # Compute wnorm
-  sqrt(sum(w * as.vector(.F(x))^2))
-}
-
-wnorm.2d.ssa <- function(x, ...) {
-  # Get F
-  F <- .F(x)
-
-  # Compute weights
-  w <- .hweights(x)
+  # Get series
+  F <- unlist(.F(x))
 
   if (any(w == 0)) {
     # Omit uncovered elements
@@ -199,18 +170,7 @@ wnorm.2d.ssa <- function(x, ...) {
   }
 
   # Compute wnorm
-  sqrt(sum(w * F^2))
-}
-
-wnorm.mssa <- function(x, ...) {
-  # Compute weights
-  w <- .hweights(x)
-
-  # Get series
-  F <- .F(x)
-
-  # Compute wnorm
-  sqrt(sum(w * unlist(F)^2))
+  sqrt(sum(w * abs(F)^2))
 }
 
 frobenius.cor <- function(x, groups, ...) {
@@ -272,11 +232,13 @@ frobenius.cor <- function(x, groups, ...) {
     max.fcor
 }
 
-wcor.ossa <- function(x, groups, ..., cache = TRUE) {
-  isfcor <- .is.frobenius.orthogonal(x, groups, ...)
-  if (!isTRUE(isfcor))
-    warning(sprintf("Component matrices are not F-orthogonal (max F-cor is %s). W-cor matrix can be irrelevant",
-                    format(isfcor, digits = 3)))
+wcor.ossa <- function(x, groups, Fs, ..., cache = TRUE) {
+  if (!missing(groups) && missing(Fs)) {
+    isfcor <- .is.frobenius.orthogonal(x, groups, ...)
+    if (!isTRUE(isfcor))
+      warning(sprintf("Component matrices are not F-orthogonal (max F-cor is %s). W-cor matrix can be irrelevant",
+                      format(isfcor, digits = 3)))
+  }
 
   NextMethod()
 }

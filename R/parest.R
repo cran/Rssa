@@ -46,7 +46,7 @@ print.fdimpars.1d <- function(x, ...) {
   }
 }
 
-parestimate.pairs <- function(U) {
+parestimate.pairs <- function(U, normalize = FALSE) {
   # Sanity check
   stopifnot(ncol(U) == 2)
 
@@ -61,6 +61,9 @@ parestimate.pairs <- function(U) {
     warning("too big deviation of estimates, period estimates might be unreliable")
 
   r <- exp(1i * acos(median(scos)))
+
+  if (normalize) r <- r / abs(r)
+
   roots2pars(r)
 }
 
@@ -68,28 +71,58 @@ tls.solve <- function(A, B) {
   stopifnot(ncol(A) == ncol(B))
   r <- ncol(A)
   V <- svd(cbind(A, B))$v[, 1:r, drop = FALSE]
-  qr.solve(V[1:r,, drop = FALSE], V[-(1:r),, drop = FALSE])
+  qr.solve(t(V[1:r,, drop = FALSE]), t(V[-(1:r),, drop = FALSE]))
 }
 
-shift.matrix <- function(U, solve.method = c("ls", "tls")) {
+shift.matrix <- function(U,
+                         wmask = NULL,
+                         topology = Inf,
+                         solve.method = c("ls", "tls")) {
   solve.method <- match.arg(solve.method)
   solver <- switch(solve.method,
                    ls = qr.solve,
                    tls = tls.solve)
-  Conj(solver(U[-nrow(U),, drop = FALSE], U[-1,, drop = FALSE]))
+
+  if (is.null(wmask))
+    wmask <- rep(TRUE, nrow(U))
+
+  lm.mask <- wmask[-1] & wmask[-length(wmask)]
+  lm1.mask <- c(lm.mask, FALSE)[wmask]
+  lm2.mask <- c(FALSE, lm.mask)[wmask]
+
+  lmA <- U[lm1.mask,, drop = FALSE]
+  lmB <- U[lm2.mask,, drop = FALSE]
+  if (topology == length(wmask) && wmask[1] && wmask[length(wmask)]) {
+    lmA <- rbind(lmA, U[length(wmask),, drop = FALSE])
+    lmB <- rbind(lmB, U[1,, drop = FALSE])
+  }
+
+  Conj(solver(lmA, lmB))
 }
 
-parestimate.esprit <- function(U, method = c("esprit-ls", "esprit-tls")) {
+parestimate.esprit <- function(U,
+                               wmask = NULL,
+                               topology = Inf,
+                               normalize = FALSE,
+                               method = c("esprit-ls", "esprit-tls")) {
   method <- match.arg(method)
-  Z <- shift.matrix(U, solve.method = switch(method,
-                                             `esprit-ls` = "ls",
-                                             `esprit-tls` = "tls"))
+  Z <- shift.matrix(U,
+                    wmask = wmask,
+                    topology = topology,
+                    solve.method = switch(method,
+                                          `esprit-ls` = "ls",
+                                          `esprit-tls` = "tls"))
 
   r <- eigen(Z, only.values = TRUE)$values
+
+  if (normalize) r <- r / abs(r)
+
   roots2pars(r)
 }
 
 parestimate.1d.ssa <- function(x, groups, method = c("pairs", "esprit-ls", "esprit-tls"),
+                               subspace = c("column", "row"),
+                               normalize.roots = NULL,
                                ...,
                                drop = TRUE) {
   method <- match.arg(method)
@@ -100,15 +133,33 @@ parestimate.1d.ssa <- function(x, groups, method = c("pairs", "esprit-ls", "espr
   # Continue decomposition, if necessary
   .maybe.continue(x, groups = groups, ...)
 
+  subspace <- match.arg(subspace)
+  if (identical(subspace, "column")) {
+    span <- .colspan
+    wmask <- x$wmask
+  } else if (identical(subspace, "row")) {
+    span <- .rowspan
+    wmask <- x$fmask
+  }
+
+  if (is.null(normalize.roots))
+    normalize.roots <- x$circular || inherits(x, "toeplitz.ssa")
+
   out <- list()
   for (i in seq_along(groups)) {
     group <- groups[[i]]
     if (identical(method, "pairs")) {
+      if (is.shaped(x))
+        stop("`pairs' parameter estimation method is not implemented for shaped SSA case yet")
       if (length(group) != 2)
         stop("can estimate for pair of eigenvectors only using `pairs' method")
-      res <- parestimate.pairs(x$U[, group])
+      res <- parestimate.pairs(span(x, group), normalize = normalize.roots)
     } else if (identical(method, "esprit-ls") || identical(method, "esprit-tls")) {
-      res <- parestimate.esprit(x$U[, group, drop = FALSE], method = method)
+      res <- parestimate.esprit(span(x, group),
+                                wmask = wmask,
+                                topology = ifelse(x$circular, x$length, Inf),
+                                normalize = normalize.roots,
+                                method = method)
     }
     out[[i]] <- res
   }
@@ -121,10 +172,25 @@ parestimate.1d.ssa <- function(x, groups, method = c("pairs", "esprit-ls", "espr
 }
 
 parestimate.toeplitz.ssa <- `parestimate.1d.ssa`
-parestimate.mssa <- parestimate.1d.ssa
+parestimate.mssa <- function(x, groups, method = c("pairs", "esprit-ls", "esprit-tls"),
+                             subspace = c("column", "row"),
+                             normalize.roots = NULL,
+                             ...,
+                             drop = TRUE) {
+  subspace <- match.arg(subspace)
+
+  if (identical(subspace, "row"))
+    stop("Row space parameter estimation is not implemented for MSSA yet")
+  parestimate.1d.ssa(x = x, groups = groups, method = method,
+                     subspace = subspace,
+                     normalize.roots = normalize.roots,
+                     ...,
+                     drop = drop)
+}
 
 shift.matrices.2d <- function(U, L,
                               wmask = NULL,
+                              topology = c(Inf, Inf),
                               solve.method = c("ls", "tls")) {
   solve.method <- match.arg(solve.method)
   solver <- switch(solve.method,
@@ -145,9 +211,23 @@ shift.matrices.2d <- function(U, L,
 
   lmA <- U[lm1.mask,, drop = FALSE]
   lmB <- U[lm2.mask,, drop = FALSE]
+  if (topology[1] == L[1]) {
+    lmc.mask <- wmask[1,, drop = FALSE] & wmask[L[1],, drop = FALSE]
+    lmc1.mask <- as.vector(rbind(matrix(FALSE, L[1] - 1, L[2]), lmc.mask)[wmask])
+    lmc2.mask <- as.vector(rbind(lmc.mask, matrix(FALSE, L[1] - 1, L[2]))[wmask])
+    lmA <- rbind(lmA, U[lmc1.mask,, drop = FALSE])
+    lmB <- rbind(lmB, U[lmc2.mask,, drop = FALSE])
+  }
 
   muA <- U[mu1.mask,, drop = FALSE]
   muB <- U[mu2.mask,, drop = FALSE]
+  if (topology[2] == L[2]) {
+    muc.mask <- wmask[, 1, drop = FALSE] & wmask[, L[2], drop = FALSE]
+    muc1.mask <- as.vector(cbind(matrix(FALSE, L[1], L[2] - 1), muc.mask)[wmask])
+    muc2.mask <- as.vector(cbind(muc.mask, matrix(FALSE, L[1], L[2] - 1))[wmask])
+    muA <- rbind(muA, U[muc1.mask,, drop = FALSE])
+    muB <- rbind(muB, U[muc2.mask,, drop = FALSE])
+  }
 
   Zx = solver(lmA, lmB)
   Zy = solver(muA, muB)
@@ -176,6 +256,8 @@ est_exp_memp_new <- function(Zs, beta = 8) {
 
 parestimate.esprit2d <- function(U, L,
                                  wmask = NULL,
+                                 topology = c(Inf, Inf),
+                                 normalize = c(FALSE, FALSE),
                                  method = c("esprit-diag-ls", "esprit-diag-tls",
                                             "esprit-memp-ls", "esprit-memp-tls"),
                                  beta = 8) {
@@ -184,11 +266,18 @@ parestimate.esprit2d <- function(U, L,
                          `esprit-diag-ls`  =, `esprit-memp-ls`  = "ls",
                          `esprit-diag-tls` =, `esprit-memp-tls` = "tls")
 
-  Zs <- shift.matrices.2d(U, L = L, wmask = wmask, solve.method = solve.method)
+  Zs <- shift.matrices.2d(U,
+                          L = L,
+                          wmask = wmask,
+                          topology = topology,
+                          solve.method = solve.method)
 
   r <- switch(method,
               `esprit-diag-ls` =, `esprit-diag-tls` = est_exp_2desprit(Zs, beta = beta),
               `esprit-memp-ls` =, `esprit-memp-tls` = est_exp_memp_new(Zs, beta = beta))
+
+  for (k in 1:2)
+    if (normalize[k]) r[[k]] <- r[[k]] / abs(r[[k]])
 
   out <- lapply(r, roots2pars)
   class(out) <- "fdimpars.2d"
@@ -198,6 +287,8 @@ parestimate.esprit2d <- function(U, L,
 parestimate.2d.ssa <- function(x, groups,
                                method = c("esprit-diag-ls", "esprit-diag-tls",
                                           "esprit-memp-ls", "esprit-memp-tls"),
+                               subspace = c("column", "row"),
+                               normalize.roots = NULL,
                                ...,
                                beta = 8,
                                drop = TRUE) {
@@ -208,13 +299,32 @@ parestimate.2d.ssa <- function(x, groups,
   # Continue decomposition, if necessary
   .maybe.continue(x, groups = groups, ...)
 
+  subspace <- match.arg(subspace)
+  if (identical(subspace, "column")) {
+    span <- .colspan
+    wmask <- x$wmask
+    window <- x$window
+  } else if (identical(subspace, "row")) {
+    span <- .rowspan
+    wmask <- x$fmask
+    window <- ifelse(x$circular, x$length - x$window + 1, x$window)
+  }
+
+  if (is.null(normalize.roots))
+    normalize.roots <- x$circular | inherits(x, "toeplitz.ssa")
+  if (length(normalize.roots) > 2)
+    warning("Incorrect argument length: length(normalize.roots) > 2, two leading values will be used")
+  normalize.roots <- rep(normalize.roots, 2)[1:2]
+
   out <- list()
   for (i in seq_along(groups)) {
     group <- groups[[i]]
 
-    out[[i]] <- parestimate.esprit2d(x$U[, group, drop = FALSE],
-                                     L = x$window,
-                                     wmask = x$wmask,
+    out[[i]] <- parestimate.esprit2d(span(x, group),
+                                     L = window,
+                                     wmask = wmask,
+                                     topology = ifelse(x$circular, x$length, Inf),
+                                     normalize = normalize.roots,
                                      method = method,
                                      beta = beta)
   }

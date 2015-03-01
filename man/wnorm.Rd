@@ -1,10 +1,11 @@
 \name{wnorm}
 \alias{wnorm}
 \alias{wnorm.1d.ssa}
-\alias{wnorm.2d.ssa}
+\alias{wnorm.nd.ssa}
 \alias{wnorm.toeplitz.ssa}
 \alias{wnorm.mssa}
 \alias{wnorm.default}
+\alias{wnorm.complex}
 
 \title{Calculate Weighted Norm of series}
 \description{
@@ -12,10 +13,11 @@
 }
 \usage{
 \method{wnorm}{1d.ssa}(x, ...)
-\method{wnorm}{2d.ssa}(x, ...)
+\method{wnorm}{nd.ssa}(x, ...)
 \method{wnorm}{toeplitz.ssa}(x, ...)
 \method{wnorm}{mssa}(x, ...)
 \method{wnorm}{default}(x, L = (N + 1) \%/\% 2, ...)
+\method{wnorm}{complex}(x, L = (N + 1) \%/\% 2, ...)
 }
 
 \arguments{
