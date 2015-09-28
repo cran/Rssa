@@ -1,5 +1,5 @@
-8a6ae79752003cc48ddac4e70117a804 *DESCRIPTION
-ea94b201e58ceb0863de61ed9353e7db *NAMESPACE
+82d27d8a7e39419e6e937148196a8dcb *DESCRIPTION
+7699306f1f358a35f32ddd171e44d30d *NAMESPACE
 8427a80cbbbfaadd987d065cb48b74dc *R/autossa.R
 a9597d58e31855ed45de5e6d70a58435 *R/cadzow.R
 b4cc51f39bbd6568f5d748c58d030b97 *R/chankel.R
@@ -30,7 +30,7 @@ ccf8f83f03c655cc3d1dfda8ad8cd9cf *data/AustralianWine.rda
 0ba5fc05b1e51cc22cf3027682cc91da *data/Mars.rda
 513626b23a8594cbd264110fddb38bb2 *data/MotorVehicle.rda
 3021b231e8d57fcd943d6377c68b2c9e *data/USUnemployment.rda
-bfacbf9f98bbf4a629a5945c8c13f803 *inst/CITATION
+8bb7a87cb02afde05d9704de2db65a03 *inst/CITATION
 633088b35369a4eb64f884438a797762 *man/AustralianWine.Rd
 5921aa4495b7f0f1148e98f53856a5d2 *man/Barbara.rd
 75ac55fd3327bfbf384efe12c81a76e6 *man/Mars.Rd

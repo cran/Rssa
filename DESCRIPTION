@@ -1,7 +1,7 @@
 Package: Rssa
 Type: Package
 Title: A Collection of Methods for Singular Spectrum Analysis
-Version: 0.13
+Version: 0.13-1
 Date: 2015-03-01
 Depends: R (>= 3.1), svd (>= 0.3.3), forecast
 Imports: lattice
@@ -12,7 +12,7 @@ Maintainer: Anton Korobeynikov <anton@korobeynikov.info>
 Description: Methods and tools for Singular Spectrum Analysis including decomposition, forecasting and gap-filling for univariate and multivariate time series.
 License: GPL (>= 2)
 URL: http://github.com/asl/rssa
-Packaged: 2015-03-02 18:13:34 UTC; asl
+Packaged: 2015-09-27 23:04:02 UTC; asl
 NeedsCompilation: yes
 Repository: CRAN
-Date/Publication: 2015-03-03 11:05:50
+Date/Publication: 2015-09-28 09:26:47
