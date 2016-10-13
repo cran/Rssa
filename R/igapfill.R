@@ -28,7 +28,7 @@ igapfill.1d.ssa <- function(x,
   base <- match.arg(base)
   N <- x$length
 
-  if (!is.shaped(x))
+  if (!capable(x, "igapfill"))
     stop("gapfilling should start from shaped SSA object")
 
   ## Obtain the initial approximation
@@ -110,7 +110,7 @@ igapfill.mssa <- function(x,
   base <- match.arg(base)
   N <- x$length
 
-  if (!is.shaped(x))
+  if (!capable(x, "igapfill"))
     stop("gapfilling should start from shaped SSA object")
 
   ## Obtain the initial approximation
@@ -145,7 +145,7 @@ igapfill.mssa <- function(x,
   scall <- x$ecall
 
   repeat {
-    scall$x <- .apply.attributes(s, F, fixup = FALSE, drop = FALSE)
+    scall$x <- .apply.attributes(x, F, fixup = FALSE, drop = FALSE)
     s <- eval(scall)
 
     r <- reconstruct(s, groups = list(ugroups), ..., cache = cache)
@@ -163,7 +163,7 @@ igapfill.mssa <- function(x,
     F <- rF
   }
 
-  scall$x <- .apply.attributes(s, F, fixup = FALSE, drop = FALSE)
+  scall$x <- .apply.attributes(x, F, fixup = FALSE, drop = FALSE)
   s <- eval(scall)
   r <- reconstruct(s, groups = groups, ..., drop.attributes = drop.attributes, cache = cache)
 

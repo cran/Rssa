@@ -343,7 +343,7 @@ static void calc_Lcor(double *R, const double *F,
   for (i = 0; i < No; ++i) {
     Rcomplex x = COMPLEX(rV1)[i];
     COMPLEX(rV1)[i].r = x.r * x.r + x.i * x.i;
-    COMPLEX(rV1)[i].i = -x.r * x.i + x.i * x.r;
+    COMPLEX(rV1)[i].i = 0;
   }
 
   /* Compute the reverse transform to obtain result */
@@ -437,88 +437,6 @@ SEXP is_tmat(SEXP ptr) {
   UNPROTECT(2);
 
   return ans;
-}
-
-SEXP toeplitz_rows(SEXP ptr) {
-  SEXP tchk;
-  SEXP ans = NILSXP;
-
-  /* Perform a type checking */
-  PROTECT(tchk = is_tmat(ptr));
-
-  if (LOGICAL(tchk)[0]) {
-    ext_matrix *e = R_ExternalPtrAddr(ptr);
-
-    PROTECT(ans = allocVector(INTSXP, 1));
-    INTEGER(ans)[0] = toeplitz_nrow(e->matrix);
-    UNPROTECT(1);
-  } else
-    error("pointer provided is not a toeplitz matrix");
-
-  UNPROTECT(1);
-
-  return ans;
-}
-
-SEXP toeplitz_cols(SEXP ptr) {
-  SEXP tchk;
-  SEXP ans = NILSXP;
-
-  /* Perform a type checking */
-  PROTECT(tchk = is_tmat(ptr));
-
-  if (LOGICAL(tchk)[0]) {
-    ext_matrix *e = R_ExternalPtrAddr(ptr);
-
-    PROTECT(ans = allocVector(INTSXP, 1));
-    INTEGER(ans)[0] = toeplitz_ncol(e->matrix);
-    UNPROTECT(1);
-  } else
-    error("pointer provided is not a toeplitz matrix");
-
-  UNPROTECT(1);
-
-  return ans;
-}
-
-SEXP tmatmul(SEXP tmat, SEXP v, SEXP transposed) {
-  SEXP Y = NILSXP, tchk;
-
-  /* Perform a type checking */
-  PROTECT(tchk = is_tmat(tmat));
-
-  if (LOGICAL(tchk)[0]) {
-    R_len_t K, L;
-    ext_matrix *e;
-    toeplitz_matrix *t;
-
-    /* Grab needed data */
-    e = R_ExternalPtrAddr(tmat);
-    t = e->matrix;
-
-    L = (LOGICAL(transposed)[0] ? toeplitz_ncol(t) : toeplitz_nrow(t));
-    K = (LOGICAL(transposed)[0] ? toeplitz_nrow(t) : toeplitz_ncol(t));
-
-    /* Check agains absurd values of inputs */
-    if (K != length(v))
-      error("invalid length of input vector 'v'");
-
-    /* Allocate output buffer */
-    PROTECT(Y = allocVector(REALSXP, L));
-
-    /* Calculate the product */
-    if (LOGICAL(transposed)[0])
-      toeplitz_tmatmul(REAL(Y), REAL(v), t);
-    else
-      toeplitz_matmul(REAL(Y), REAL(v), t);
-
-    UNPROTECT(1);
-  } else
-    error("pointer provided is not a toeplitz matrix");
-
-  UNPROTECT(1);
-
-  return Y;
 }
 
 SEXP Lcor(SEXP F, SEXP L, SEXP circular) {

@@ -2,9 +2,6 @@
 \alias{decompose}
 \alias{decompose.default}
 \alias{decompose.ssa}
-\alias{decompose.1d.ssa}
-\alias{decompose.nd.ssa}
-\alias{decompose.mssa}
 \alias{decompose.cssa}
 \alias{decompose.toeplitz.ssa}
 \title{Perform SSA Decomposition}
@@ -14,16 +11,14 @@
 }
 
 \usage{
-\method{decompose}{1d.ssa}(x, neig = min(50, L, K), \dots, force.continue = FALSE)
-\method{decompose}{toeplitz.ssa}(x, neig = min(50, L, K), \dots, force.continue = FALSE)
-\method{decompose}{mssa}(x, neig = min(50, L, sum(K)), \dots, force.continue = FALSE) 
-\method{decompose}{cssa}(x, neig = min(50, L, K), \dots, force.continue = FALSE)
-\method{decompose}{nd.ssa}(x, neig = min(50, prod(L), prod(K)), \dots)
+\method{decompose}{ssa}(x, neig = NULL, \dots, force.continue = FALSE)
+\method{decompose}{toeplitz.ssa}(x, neig = NULL, \dots, force.continue = FALSE)
+\method{decompose}{cssa}(x, neig = NULL, \dots, force.continue = FALSE)
 }
 
 \arguments{
   \item{x}{SSA object holding the decomposition.}
-  \item{neig}{number of desired eigentriples.}
+  \item{neig}{number of desired eigentriples or 'NULL' for default value (minimum from 50 and trajectory space dimension).}
   \item{\dots}{additional arguments passed to SVD routines.}
   \item{force.continue}{logical, if TRUE then continuation of the decomposition is explicitly requested}
 }

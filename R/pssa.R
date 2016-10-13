@@ -28,6 +28,13 @@ orthopoly <- function(d, L) {
 
   stopifnot(is.numeric(d) && length(d) == 1)
 
+  # Check dimension
+  if (length(L) > 1 && d > 1) {
+    stop("Polynomial projection is not implemented for multidimensional SSA yet")
+  }
+
+  L <- prod(L)  # TODO Think about MSSA case
+
   if (d == 0) {
     # Return matrix with zero columns
     matrix(NA_real_, L, 0)
@@ -39,7 +46,7 @@ orthopoly <- function(d, L) {
 }
 
 .phmat <- function(x) {
-  hmat <- .get.or.create.hmat(x)
+  hmat <- .get.or.create.trajmat(x)
   column.projector <- .get(x, "column.projector")
   row.projector <- .get(x, "row.projector")
 
@@ -65,23 +72,16 @@ orthopoly <- function(d, L) {
 .get.or.create.phmat <- function(x)
   .get.or.create(x, "phmat", .phmat(x))
 
-hmatmul.wrap <- function(h, mx, transposed = TRUE) {
-  if (ncol(mx) == 0)
-    return(matrix(NA_real_, if (transposed) hcols(h) else hrows(h), 0))
-
-  apply(mx, 2, hmatmul, hmat = h, transposed = transposed)
-}
-
 .calc.projections <- function(x, force.update = FALSE) {
   if (!is.null(.decomposition(x)) && !force.update)
     return(x)
 
-  hmat <- .get.or.create.hmat(x)
+  hmat <- .get.or.create.trajmat(x)
   LU <- .get(x, "column.projector")
   RV <- .get(x, "row.projector")
 
-  RU <- hmatmul.wrap(hmat, RV, transposed = FALSE)
-  LV <- hmatmul.wrap(hmat, LU, transposed = TRUE) - RV %*% crossprod(RU, LU)
+  RU <- hmat %*% RV
+  LV <- crossprod(hmat, LU) - RV %*% crossprod(RU, LU)
   Rsigma <- sqrt(colSums(RU^2))
   RU <- RU / rep(Rsigma, each = nrow(RU))
   Lsigma <- sqrt(colSums(LV^2))
@@ -94,170 +94,63 @@ hmatmul.wrap <- function(h, mx, transposed = TRUE) {
   x
 }
 
-decompose.pssa <- function(x,
-                           neig = min(50, L, K),
-                           ...,
-                           force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-  stop("Unsupported SVD method for SSA with projection!")
-}
-
 nspecial.pssa <- function(x) {
   sum(unlist(.decomposition(x, c("nPL", "nPR"))))
 }
 
-decompose.pssa.svd <- function(x,
-                               neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
-                               ...,
-                               force.continue = FALSE) {
+decompose.pssa <- function(x,
+                           neig = NULL,
+                           ...,
+                           force.continue = FALSE) {
+  ## Check, whether continuation of decomposition is requested
+  if (!force.continue && nsigma(x) > nspecial(x) &&
+      !capable(x, "decompose.continue"))
+    stop("Continuation of decomposition is not yet implemented for this method.")
+
+  if (is.null(neig))
+    neig <- .default.neig(x, ...)
+
   # Compute special eigentriples if needed
   .calc.projections(x)
 
-  N <- x$length; L <- x$window; K <- N - L + 1
   nspecial <- nspecial(x)
-  nPR <- .decomposition(x, "nPR")
-  nPL <- .decomposition(x, "nPL")
 
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > nspecial)
-    stop("Continuation of decomposition is not supported for this method.")
+  # Extract special components
+  ssigma <- .sigma(x)[seq_len(nspecial)]
+  sU <- .U(x)[, seq_len(nspecial), drop = FALSE]
+  sV <- .V(x)[, seq_len(nspecial), drop = FALSE]
 
-  # Get trajectory matrix
-  h <- .trajectory.matrix(x)
+  if (identical(x$svd.method, "svd")) {
+    S <- svd(as.matrix(.get.or.create.phmat(x)), nu = neig, nv = neig)
+    .set.decomposition(x,
+                       sigma = c(ssigma, S$d), U = cbind(sU, S$u), V = cbind(sV, S$v))
+  } else if (identical(x$svd.method, "eigen")) {
+    S <- eigen(tcrossprod(.get.or.create.phmat(x)), symmetric = TRUE)
 
-  # Subtract special components
-  sigma <- .sigma(x)[seq_len(nspecial)]
-  U <- .U(x)[, seq_len(nspecial), drop = FALSE]
-  V <- .V(x)[, seq_len(nspecial), drop = FALSE]
-  h <- h - U %*% (sigma * t(V))
+    ## Fix small negative values
+    S$values[S$values < 0] <- 0
 
-  # Do decomposition
-  S <- svd(h, nu = neig, nv = neig)
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = c(sigma, S$d), U = cbind(U, S$u), V = cbind(V, S$v))
-
-  x
-}
-
-decompose.pssa.eigen <- function(x,
-                                 neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
-                                 ...,
-                                 force.continue = FALSE) {
-  # Compute special eigentriples if needed
-  .calc.projections(x)
-
-  N <- x$length; L <- x$window; K <- N - L + 1
-  nspecial <- nspecial(x)
-  nPR <- .decomposition(x, "nPR")
-  nPL <- .decomposition(x, "nPL")
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > nspecial)
-    stop("Continuation of decomposition is not supported for this method.")
-
-  sigma <- .sigma(x)[seq_len(nspecial)]
-  U <- .U(x)[, seq_len(nspecial), drop = FALSE]
-  V <- .V(x)[, seq_len(nspecial), drop = FALSE]
-
-  # We will compute (X - P_X) %*% t(X - P_X) = X %*% t(X) - P_X %*% t(X) - X %*% t(P_X) + P_X %*% t(P_X)
-  # Get common Lcov matrix, i.e. X %*% t(X)
-  Lcov <- .Lcov.matrix(x)
-  # Get hankel circulant
-  h <- .get.or.create.hmat(x)
-  # Compute X %*% t(P_X)
-  XtPX <- hmatmul.wrap(h, V, transposed = FALSE) %*% (sigma * t(U))
-  # Compute P_X %*% t(P_X)
-  PXtPX <- U %*% crossprod(V * rep(sigma, each = nrow(V))) %*% t(U)
-
-  C <- Lcov - XtPX - t(XtPX) + PXtPX
-
-  # Do decomposition
-  S <- eigen(C, symmetric = TRUE)
-
-  # Fix small negative values
-  S$values[S$values < 0] <- 0
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = c(sigma, sqrt(S$values[seq_len(neig)])),
-                     U = cbind(U, S$vectors[, seq_len(neig), drop = FALSE]),
-                     V = V)
-
-  x
-}
-
-decompose.pssa.propack <- function(x,
-                                   neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
-                                   ...,
-                                   force.continue = FALSE) {
-  # Compute special eigentriples if needed
-  .calc.projections(x)
-
-  N <- x$length; L <- x$window; K <- N - L + 1
-  nspecial <- nspecial(x)
-  nPR <- .decomposition(x, "nPR")
-  nPL <- .decomposition(x, "nPL")
-
-  # We will use special (first nspecial) entries below
-  sigma <- .sigma(x)
-  U <- .U(x)
-  V <- .V(x)
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > nspecial)
-    stop("Continuation of decompostion is not yet implemented for this method.")
-
-  ph <- .get.or.create.phmat(x)
-  S <- propack.svd(ph, neig = neig, ...)
-
-  # Form results
-  sigma <- c(sigma[seq_len(nspecial)], S$d)
-  U <- cbind(U[, seq_len(nspecial)], S$u)
-  V <- cbind(V[, seq_len(nspecial)], S$v)
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = sigma, U = U, V = V)
-
-  x
-}
-
-decompose.pssa.nutrlan <- function(x,
-                                   neig = min(50, L - max(nPR, nPL), K - max(nPR, nPL)),
-                                   ...) {
-  # Compute special eigentriples if needed
-  .calc.projections(x)
-
-  N <- x$length; L <- x$window; K <- N - L + 1
-  nspecial <- nspecial(x)
-  nPR <- .decomposition(x, "nPR")
-  nPL <- .decomposition(x, "nPL")
-
-  # We will use special (first nspecial) entries below
-  sigma <- .sigma(x)
-  U <- .U(x)
-  V <- .V(x)
-
-  ph <- .get.or.create.phmat(x)
-  S <- trlan.svd(ph, neig = neig, ...,
-                 lambda = sigma[-seq_len(nspecial)], U = U[, -seq_len(nspecial), drop = FALSE])
-
-  # Form results
-  sigma <- c(sigma[seq_len(nspecial)], S$d)
-  U <- cbind(U[, seq_len(nspecial)], S$u)
-  V <- cbind(V[, seq_len(nspecial)], S$v)
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = sigma, U = U, V = V)
+    .set.decomposition(x,
+                       sigma = c(ssigma, sqrt(S$values[seq_len(neig)])),
+                       U = cbind(sU, S$vectors[, seq_len(neig), drop = FALSE]),
+                       V = sV)
+  } else if (identical(x$svd.method, "propack")) {
+    S <- propack.svd(.get.or.create.phmat(x), neig = neig, ...)
+    ## Save results
+    .set.decomposition(x,
+                       sigma = c(ssigma, S$d), U = cbind(sU, S$u), V = cbind(sV, S$v))
+  } else if (identical(x$svd.method, "nutrlan")) {
+    S <- trlan.svd(.get.or.create.phmat(x), neig = neig, ...,
+                   lambda = .sigma(x)[-seq_len(nspecial)], U = .U(x)[, -seq_len(nspecial), drop = FALSE])
+    .set.decomposition(x,
+                       sigma = c(ssigma, S$d), U = cbind(sU, S$u), V = cbind(sV, S$v))
+  } else
+    stop("unsupported SVD method")
 
   x
 }
 
 calc.v.pssa <- function(x, idx, ...) {
-  N <- x$length; L <- x$window; K <- N - L + 1
   nV <- nv(x)
 
   V <- matrix(NA_real_, .traj.dim(x)[2], length(idx))
@@ -277,10 +170,9 @@ calc.v.pssa <- function(x, idx, ...) {
     }
 
     U <- .U(x)[, idx.new, drop = FALSE]
-    ph <- .get.or.create.phmat(x)
 
-    V[, idx > nV] <- sapply(seq_along(idx.new),
-                            function(i) ematmul(ph, U[, i], transposed = TRUE) / sigma[i])
+    h <- .get.or.create.phmat(x)
+    V[, idx > nV] <- crossprod(h, U) / rep(sigma, each = nrow(V))
   }
 
   invisible(V)
@@ -331,14 +223,14 @@ enlarge.basis <- function(B, len, ...) {
   B
 }
 
-rforecast.pssa <- function(x, groups, len = 1,
-                           base = c("reconstructed", "original"),
-                           only.new = TRUE,
-                           reverse = FALSE,
-                           ...,
-                           drop = TRUE, drop.attributes = FALSE, cache = TRUE) {
-  if (is.shaped(x))
-    stop("`forecasting is not implemented for shaped SSA case yet")
+rforecast.pssa.1d.ssa <- function(x, groups, len = 1,
+                                  base = c("reconstructed", "original"),
+                                  only.new = TRUE,
+                                  reverse = FALSE,
+                                  ...,
+                                  drop = TRUE, drop.attributes = FALSE, cache = TRUE) {
+  if (!capable(x, "rforecast"))
+    stop("recurrent forecasting is not implemented for this SSA kind yet")
 
   L <- x$window
   K <- x$length - L + 1
@@ -412,12 +304,12 @@ rforecast.pssa <- function(x, groups, len = 1,
   invisible(out)
 }
 
-vforecast.pssa <- function(x, groups, len = 1,
-                           only.new = TRUE,
-                           ...,
-                           drop = TRUE, drop.attributes = FALSE) {
-  if (is.shaped(x))
-    stop("`forecasting is not implemented for shaped SSA case yet")
+vforecast.pssa.1d.ssa <- function(x, groups, len = 1,
+                                  only.new = TRUE,
+                                  ...,
+                                  drop = TRUE, drop.attributes = FALSE) {
+  if (!capable(x, "vforecast"))
+    stop("vector forecasting is not implemented for this SSA kind yet")
 
   L <- x$window
   K <- x$length - L + 1
@@ -488,3 +380,55 @@ vforecast.pssa <- function(x, groups, len = 1,
   # Forecasted series can be pretty huge...
   invisible(out)
 }
+
+.default.neig.pssa <- function(x, ...) {
+  nPR <- max(0, ncol(.get(x, "column.projector")))
+  nPL <- max(0, ncol(.get(x, "row.projector")))
+
+  tjdim <- .traj.dim(x)
+
+  min(50, tjdim - max(nPR, nPL))
+}
+
+.init.fragment.pssa <- function(this)
+  expression({
+    ## First, initialize the main object
+    ## We cannot use NextMethod here due to non-standard evaluation
+    class.wo.pssa <- class(this)[!grepl("^pssa", class(this))]
+    eval(getS3method(".init.fragment", class.wo.pssa)(this))
+    ## eval(.init.fragment.1d.ssa(this))
+
+    # unwind all dimentions except last
+    .unwind.dim.except.last <- function(x) {
+      d <- dim(x)
+      if (is.null(d) || length(d) <= 2) {
+        return(x)
+      }
+
+      dim(x) <- c(prod(d[-length(d)]), d[length(d)])
+
+      x
+    }
+
+    column.projector <- .unwind.dim.except.last(column.projector)
+    row.projector <- .unwind.dim.except.last(row.projector)
+
+    ## Next, calculate the projectors
+    column.projector <- if (length(column.projector) == 1) orthopoly(column.projector, L) else qr.Q(qr(column.projector))
+    row.projector <- if (length(row.projector) == 1) orthopoly(row.projector, K) else qr.Q(qr(row.projector))
+
+    ## Check projector dimensions
+    ## TODO Think about MSSA case
+    stopifnot(nrow(column.projector) == prod(L))
+    stopifnot(nrow(row.projector) == prod(K))
+
+    ## Shape projectors if needed
+    if (!is.null(wmask)) {
+      column.projector <- column.projector[as.vector(wmask),, drop = FALSE]
+      column.projector <- qr.Q(qr(column.projector))
+    }
+    if (!is.null(fmask)) {
+      row.projector <- row.projector[as.vector(fmask),, drop = FALSE]
+      row.projector <- qr.Q(qr(row.projector))
+    }
+  })

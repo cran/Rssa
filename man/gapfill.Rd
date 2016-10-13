@@ -13,16 +13,19 @@
 
 \usage{
 \method{gapfill}{1d.ssa}(x, groups, base = c("original", "reconstructed"),
-        method = c("sequential", "simultaneous"), alpha = 0.5, \dots,
+        method = c("sequential", "simultaneous"),
+        alpha = function(len) seq.int(0, 1, length.out = len), \dots,
         drop = TRUE, drop.attributes = FALSE, cache = TRUE)
 \method{gapfill}{mssa}(x, groups, base = c("original", "reconstructed"),
-        alpha = 0.5, \dots,
+        alpha = function(len) seq.int(0, 1, length.out = len), \dots,
         drop = TRUE, drop.attributes = FALSE, cache = TRUE)
 \method{gapfill}{cssa}(x, groups, base = c("original", "reconstructed"),
-        method = c("sequential", "simultaneous"), alpha = 0.5, \dots,
+        method = c("sequential", "simultaneous"),
+        alpha = function(len) seq.int(0, 1, length.out = len), \dots,
         drop = TRUE, drop.attributes = FALSE, cache = TRUE)
 \method{gapfill}{toeplitz.ssa}(x, groups, base = c("original", "reconstructed"),
-        method = c("sequential", "simultaneous"), alpha = 0.5, \dots,
+        method = c("sequential", "simultaneous"),
+        alpha = function(len) seq.int(0, 1, length.out = len), \dots,
         drop = TRUE, drop.attributes = FALSE, cache = TRUE)
 }
 
@@ -37,7 +40,9 @@
     'References' for more info.}
   \item{alpha}{weight used for combining forecasts from left and right
     when method = "sequential"; 0.5 means that the forecasts are averaged,
-    0 (1) means that only forecast from the left (right correspondingly) is used}
+    0 (1) means that only forecast from the left (right correspondingly)
+    is used, arbitrary function could be specified; by default linear
+    weights are used.}
   \item{\dots}{additional arguments passed to \code{\link{reconstruct}}
     routines}
   \item{drop}{logical, if 'TRUE' then the result is coerced to series
@@ -83,6 +88,8 @@
   \code{\link{Rssa}} for an overview of the package, as well as,
   \code{\link[Rssa:rforecast]{rforecast}},
   \code{\link[Rssa:igapfill]{igapfill}},
+  \code{\link[Rssa:clplot]{clplot}},
+  \code{\link[Rssa:summarize.gaps]{summarize.gaps}},
 }
 
 \examples{

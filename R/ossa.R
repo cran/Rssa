@@ -111,36 +111,14 @@ orthogonalize <- function(Y, Z, sigma, side = c("bi", "left", "right"), normaliz
 .traj.matrix.ssa <- function(x, ...)
   stop("`.traj.matrix' is not implemented for this kind of SSA")
 
-hbhmatmul.wrap <- function(h, mx, transposed = TRUE) {
-  if (ncol(mx) == 0)
-    return(matrix(NA_real_, if (transposed) hbhcols(h) else hbhrows(h), 0))
-
-  apply(mx, 2, hbhmatmul, hmat = h, transposed = transposed)
-}
-
-.traj.matrix.multiplier <- function(x, ...)
-  UseMethod(".traj.matrix.multiplier")
-
-.traj.matrix.multiplier.1d.ssa <- .traj.matrix.multiplier.toeplitz.ssa <- function(x, ...)
-  hmatmul.wrap
-
-.traj.matrix.multiplier.nd.ssa <- .traj.matrix.multiplier.mssa <- function(x, ...)
-  hbhmatmul.wrap
-
-.traj.matrix.multiplier.ssa <- function(x, ...)
-  stop("`.traj.matrix.multiplier' is not implemented for this kind of SSA")
-
 .frob.dist.series.lowrank <- function(F, sigma, Y, Z, ssaobj) {
-  # Get trajectory matrix multiplication function (facepalm)
-  matmul.wrap <- .traj.matrix.multiplier(ssaobj)
-
   # This is efficient implementation of |T(F) - Y diag(sigma) Z^T|^2_F
   s <- .clone.with.new.series(ssaobj, F)
   TF <- .traj.matrix(s)
 
   sZ <- Z * rep(sigma, each = nrow(Z))
 
-  res <- sum((sZ %*% crossprod(Y)) * sZ) + wnorm(s)^2 - 2*sum(matmul.wrap(TF, Y, transposed = TRUE) * sZ)
+  res <- sum((sZ %*% crossprod(Y)) * sZ) + wnorm(s)^2 - 2*sum(crossprod(TF, Y) * sZ)
 
   # Fix possible numeric error, force dist be nonnegative
   if (res < 0)
@@ -150,14 +128,11 @@ hbhmatmul.wrap <- function(h, mx, transposed = TRUE) {
 }
 
 .owcor <- function(Fs, LM, RM, ssaobj) {
-  # Get trajectory matrix multiplication function
-  matmul.wrap <- .traj.matrix.multiplier(ssaobj)
-
   mx <- lapply(Fs,
                function(F) {
                  s <- .clone.with.new.series(ssaobj, F)
                  TF <- .traj.matrix(s)
-                 as.vector(LM %*% matmul.wrap(TF, t(RM), transposed = FALSE))
+                 as.vector(LM %*% tcrossprod(TF, RM))
               })
   mx <- do.call(cbind, mx)
 
@@ -308,7 +283,7 @@ svd2LRsvd <- function(d, u, v, basis.L, basis.R, need.project = TRUE, fast = TRU
   U <- .U(x)[, idx, drop = FALSE]
   V <- if (nv(x) < desired) calc.v(x, idx) else .V(x)[, idx, drop = FALSE]
 
-  # TODO Perform orthogonolize if it's only needed
+  # TODO Perform orthogonalize if it's only needed
   dec <- orthogonalize(U, V, sigma, side = "bi")
   sigma <- dec$d; U <- dec$u; V <- dec$v
 
@@ -318,12 +293,15 @@ svd2LRsvd <- function(d, u, v, basis.L, basis.R, need.project = TRUE, fast = TRU
   list(sigma = sigma, U = U, V = V)
 }
 
-iossa <- function(x, nested.groups, ..., tol = 1e-5, kappa = 2,
-                  maxiter = 100,
-                  norm = function(x) sqrt(mean(x^2)),
-                  trace = FALSE,
-                  kappa.balance = 0.5) {
-  if (inherits(x, "cssa"))
+iossa <- function(x, ...)
+  UseMethod("iossa")
+
+iossa.ssa <- function(x, nested.groups, ..., tol = 1e-5, kappa = 2,
+                      maxiter = 100,
+                      norm = function(x) sqrt(mean(x^2)),
+                      trace = FALSE,
+                      kappa.balance = 0.5) {
+  if (!capable(x, "iossa"))
     stop("I-OSSA is not implemented for Complex SSA yet")
 
   # Get mask
@@ -479,16 +457,140 @@ iossa <- function(x, nested.groups, ..., tol = 1e-5, kappa = 2,
   invisible(x)
 }
 
-fossa <- function(x, nested.groups, FILTER = diff, gamma = 1, normalize = FALSE, ...) {
-  if (!is.function(FILTER)) {
-    FILTER.coeffs <- FILTER
-    FILTER <- function(x) {
-      out <- filter(x, FILTER.coeffs)
-      out[!is.na(out)]
+
+.fmask <- function(x) {
+  fmask <- .get(x, "fmask", NULL)
+  if (!is.null(fmask)) {
+    return(fmask)
+  }
+
+  N <- x$length
+  L <- x$window
+
+  if (inherits(x, "mssa")) {
+    n <- length(N)
+    N <- N[1]
+    L <- L[1]
+    K <- ifelse(x$circular, N, N - L + 1)
+    K <- c(K, n)
+  } else {
+    K <- ifelse(x$circular, N, N - L + 1)
+  }
+
+  array(TRUE, dim = K)
+}
+
+
+.dim <- function(x) {
+  if (inherits(x, "mssa")) {
+    2
+  } else {
+    length(x$length)
+  }
+}
+
+
+.prepare.v.filter <- function(x, filter, r) {
+  wmask <- !is.na(filter)
+  mask <- .fmask(x) #TODO: Cache it
+  circular <- x$circular
+  if (inherits(x, "mssa")) {
+    circular <- c(circular, FALSE)
+  }
+
+  fmask <- .factor.mask.2d(mask, wmask, circular = circular)
+
+  if (!all(wmask) || !all(fmask) || any(circular)) {
+    weights <- .field.weights.2d(wmask, fmask, circular = circular)
+
+    ommited <- sum(mask & (weights == 0))
+    if (ommited > 0) {
+      warning(sprintf("Some field elements were not covered by shaped window. %d elements will be ommited", ommited))
+    }
+
+    if (all(weights == 0)) {
+      warning("Nothing to filter: the given field shape is empty")
+    }
+  } else {
+    weights <- NULL
+  }
+
+  .multilayer <- function(a, n) {
+    if (is.null(dim(a))) dim(a) <- length(a)
+
+    array(a, dim = c(dim(a), n))
+  }
+
+  list(mask = .multilayer(mask, r),
+       wmask = .multilayer(wmask, 1),
+       fmask = .multilayer(fmask, r),
+       weights = if (!is.null(weights)) .multilayer(weights, r) else weights,
+       circular = c(circular, FALSE))
+}
+
+
+.filter.vectors <- function(x, vectors, filter) {
+  stopifnot(is.array(filter))
+  stopifnot(is.matrix(vectors))
+
+  r <- ncol(vectors)
+
+  args <- .prepare.v.filter(x, filter, r)
+
+  F <- array(NA_real_, dim = dim(args$mask))
+  F[args$mask] <- as.numeric(vectors)
+
+  w <- array(NA_real_, dim = dim(args$wmask))
+  w[args$wmask] <- as.numeric(filter[!is.na(filter)])
+
+  h <- new.hbhmat(F,
+                  wmask = args$wmask,
+                  fmask = args$fmask,
+                  weights = args$weights,
+                  circular = args$circular)
+
+  res <- as.vector(w) %*% h
+
+  matrix(res, nrow = length(res) / r, ncol = r)
+}
+
+
+fossa <- function(x, ...)
+  UseMethod("fossa")
+
+fossa.ssa <- function(x, nested.groups,
+                      filter = c(-1, 1),
+                      gamma = Inf,
+                      normalize = TRUE,
+                      ...) {
+  ndim <- .dim(x)
+  effndim <- if (inherits(x, "mssa")) 1 else ndim
+
+  if (!is.list(filter)) {
+    if (!is.array(filter)) {
+      filter <- rep(list(filter), effndim)
+    } else {
+      filter <- list(filter)
     }
   }
 
-  N <- x$length; L <- x$window; K <- N - L + 1
+  if (effndim > 1) {
+    for (i in seq_along(filter)) {
+      if (!is.array(filter[[i]])) {
+        d <- rep(1, ndim)
+        d[(i - 1) %% ndim + 1] <- length(filter[[i]])
+        filter[[i]] <- array(filter[[i]], dim = d)
+      }
+    }
+  } else if (inherits(x, "mssa")) {
+    for (i in seq_along(filter)) {
+      d <- c(length(filter[[i]]), 1)
+      filter[[i]] <- array(filter[[i]], dim = d)
+    }
+  } else {
+    filter <- lapply(filter, as.array)
+  }
+
 
   if (missing(nested.groups))
     nested.groups <- as.list(1:min(nsigma(x), nu(x)))
@@ -504,11 +606,22 @@ fossa <- function(x, nested.groups, FILTER = diff, gamma = 1, normalize = FALSE,
 
   Y <- if (normalize) V else Z
 
-  fY <- apply(Y, 2, FILTER)
-  dec <- eigen(crossprod(rbind(Y, gamma * fY)), symmetric = TRUE)
-  U <- U %*% dec$vectors
-  Z <- Z %*% dec$vectors
-  sigma <- rep(1, ncol(U))
+  fYs <- lapply(filter, .filter.vectors, x = x, vectors = Y)
+  fY <- do.call(rbind, fYs)
+
+  newV <- if (is.infinite(gamma)) fY else rbind(Y, gamma * fY)
+
+  dec <- eigen(crossprod(newV), symmetric = TRUE)
+
+  if (normalize) {
+    U <- (U * rep(osigma, each = nrow(U))) %*% dec$vectors
+    Z <- V %*% dec$vectors
+    sigma <- rep(1, ncol(U))
+  } else {
+    U <- U %*% dec$vectors
+    Z <- Z %*% dec$vectors
+    sigma <- rep(1, ncol(U))
+  }
 
   x <- clone(x, copy.cache = FALSE) # TODO Maybe preserve relevant part of cache?
   .save.oblique.decomposition(x, sigma, U, Z, idx)
@@ -565,7 +678,6 @@ decompose.ossa <- function(x, ...) {
 .rowspan.ossa <- function(x, idx) {
   qr.Q(qr(calc.v(x, idx)))
 }
-
 
 owcor <- function(x, groups, ..., cache = TRUE) {
   # Check class

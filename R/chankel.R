@@ -22,10 +22,6 @@
                                             wmask = x$wmask, fmask = x$fmask, weights = x$weights))
 }
 
-.traj.dim.cssa <- function(x) {
-  c(x$window, sum(x$length - x$window + 1))
-}
-
 .chmat <- function(x, fft.plan) {
   N <- x$length; L <- x$window; K <- N - L + 1
   F <- .F(x)
@@ -48,165 +44,73 @@
                  .chmat(x, fft.plan = .get.or.create.cfft.plan(x)))
 }
 
+.get.or.create.trajmat.cssa <- .get.or.create.chmat
+
 decompose.cssa <- function(x,
-                           neig = min(50, L, K),
+                           neig = NULL,
                            ...,
                            force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-  stop("Unsupported SVD method for Complex SSA!")
-}
-
-decompose.cssa.svd <- function(x,
-                               neig = min(L, K),
-                               ...,
-                               force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
   # Check, whether continuation of decomposition is requested
   if (!force.continue && nsigma(x) > 0)
     stop("Continuation of decomposition is not supported for this method.")
 
-  # Build hankel matrix
-  F <- .F(x)
-  h <- hankel(F, L = L)
+  if (is.null(neig))
+    neig <- .default.neig(x, ...)
 
-  # Do decomposition
-  S <- svd(h)
 
-  # Save results
-  .set.decomposition(x,
-                     sigma = S$d[seq_len(neig)],
-                     U = if (!is.null(S$u)) S$u[, seq_len(neig), drop = FALSE] else NULL,
-                     V = if (!is.null(S$v)) S$v[, seq_len(neig), drop = FALSE] else NULL)
+  if (identical(x$svd.method, "svd")) {
+    S <- svd(hankel(.F(x), L = x$window), nu = neig, nv = neig)
+    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+  } else if (identical(x$svd.method, "eigen")) {
+    h <- hankel(.F(x), L = x$window)
 
-  x
-}
+    ## FIXME: Build the complex L-covariance matrix properly
+    S <- eigen(tcrossprod(h, Conj(h)), symmetric = TRUE)
 
-.traj.dim.cssa.svd <- function(x) {
-  c(x$window, x$length - x$window + 1)
-}
+    ## Fix small negative values
+    S$values[S$values < 0] <- 0
 
-cssa.to.complex <- function(values, vectors) {
-  # First, make sure values come into the pairs
-  d1 <- values[c(TRUE, FALSE)]
-  d2 <- values[c(FALSE, TRUE)]
-  if (any((d1 - d2) / d2 > 1e-3 & d2 > 0))
-    warning("Too big difference between consecutive eigenvalues. CSSA might not converge")
-
-  # And vectors
-  Y1 <- vectors[1:(nrow(vectors)/2),    c(TRUE,  FALSE)]
-  Z1 <- vectors[-(1:(nrow(vectors)/2)), c(TRUE,  FALSE)]
-  Y2 <- vectors[1:(nrow(vectors)/2),    c(FALSE, TRUE)]
-  Z2 <- vectors[-(1:(nrow(vectors)/2)), c(FALSE, TRUE)]
-
-  V1 <- Y1 + 1i*Z1
-  V2 <- Y2 + 1i*Z2
-
-  # Sanity check
-  if (any((Mod(V1 - 1i*V2) > 1e-6) & (Mod(V1 + 1i*V2) > 1e-6)))
-    warning("Too big difference between consecutive eigenvectors. CSSA might not converge")
-
-  list(d = d2, u = V2
-       # , vectors2 = V2,
-       # dd = (d1 - d2) / d2 > 1e-3 & d2 > 0,
-       # vv = (Mod(V1 - 1i*V2) > 1e-6) & (Mod(V1 + 1i*V2) > 1e-6)
-       )
-}
-
-decompose.cssa.eigen <- function(x, ...,
-                                 neig = min(L, K),
-                                 force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not supported for this method.")
-
-  # Build hankel matrix
-  F <- .F(x)
-
-  R <- hankel(Re(F), L = L)
-  I <- hankel(Im(F), L = L)
-  h <- cbind(rbind(R, I), rbind(-I, R))
-
-  # Do decomposition
-  # FIXME: Build the L-covariance matrix properly
-  S <- eigen(tcrossprod(h, h), symmetric = TRUE)
-
-  # Fix small negative values
-  S$values[S$values < 0] <- 0
-
-  S <- cssa.to.complex(sqrt(S$values), S$vectors)
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = S$d[1:neig], U = S$u[, 1:neig, drop = FALSE])
-
-  x
-}
-
-decompose.cssa.propack <- function(x,
-                                   neig = min(50, L, K),
-                                   ...,
-                                   force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decompostion is not yet implemented for this method.")
-
-  h <- .get.or.create.chmat(x)
-  S <- propack.svd(h, neig = 2*neig, ...)
-
-  S <- cssa.to.complex(S$d, S$u)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
-
-  x
-}
-
-decompose.cssa.nutrlan <- function(x,
-                                   neig = min(50, L, K),
-                                   ...) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  h <- .get.or.create.chmat(x)
-
-  sigma <- .sigma(x)
-  U <- .U(x)
-
-  S <- trlan.svd(h, neig = 2*neig, ...,
-                 lambda = sigma, U = U)
-
-  S <- cssa.to.complex(S$d, S$u)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u)
+    ## Save results
+    .set.decomposition(x,
+                       sigma = S$values[seq_len(neig)],
+                       U = S$vectors[, seq_len(neig), drop = FALSE])
+  } else
+    stop("unsupported SVD method")
 
   x
 }
 
 .traj.dim.cssa <- function(x) {
-  c(2*x$window, 2*(x$length - x$window + 1))
+  c(x$window, x$length - x$window + 1)
 }
 
-calc.v.cssa<- function(x, idx, env = .GlobalEnv, ...) {
-  sigma <- .sigma(x)[idx]
+calc.v.cssa <- function(x, idx, ...) {
+  nV <- nv(x)
 
-  if (any(sigma <= .Machine$double.eps)) {
-    sigma[sigma <= .Machine$double.eps] <- Inf
-    warning("some sigmas are equal to zero. The corresponding vectors will be zeroed")
+  V <- matrix(NA_complex_, .traj.dim(x)[2], length(idx))
+  idx.old <- idx[idx <= nV]
+  idx.new <- idx[idx > nV]
+
+  if (length(idx.old) > 0) {
+    V[, idx <= nV] <- .V(x)[, idx.old]
   }
 
-  U <- .U(x)[, idx, drop = FALSE]
-  h <- .get.or.create.chmat(x)
+  if (length(idx.new) > 0) {
+    sigma <- .sigma(x)[idx.new]
 
-  invisible(sapply(1:length(idx),
-                   function(i) {
-                     v <- ematmul(h, c(Re(U[, i]), Im(U[, i])), transposed = TRUE) / sigma[i]
-                     v[1:(length(v) / 2)] + 1i*v[-(1:(length(v) / 2))]
-                   }))
+    if (any(sigma <= .Machine$double.eps)) {
+      sigma[sigma <= .Machine$double.eps] <- Inf
+      warning("some sigmas are equal to zero. The corresponding vectors will be zeroed")
+    }
+
+    U <- .U(x)[, idx.new, drop = FALSE]
+
+    h <- .get.or.create.chmat(x)
+    rV <- crossprod(h, rbind(Re(U), Im(U))) / rep(sigma, each = 2*nrow(V))
+    V[, idx > nV] <- rV[seq_len(nrow(V)),, drop = FALSE] + 1i*rV[-seq_len(nrow(V)),, drop = FALSE]
+  }
+
+  invisible(V)
 }
 
 .hankelize.one.cssa <- function(x, U, V, fft.plan = .get.or.create.cfft.plan(x)) {
@@ -254,3 +158,18 @@ plot.cssa.reconstruction <- function(x,
   mplot[[2L]] <- x
   eval(mplot, parent.frame())
 }
+
+.init.fragment.cssa <- function(this)
+  expression({
+    if (any(circular))
+      stop("Circular variant of complex SSA isn't implemented yet")
+
+    # Sanity check - the input series should be complex
+    if (!is.complex(x))
+      stop("complex SSA should be performed on complex time series")
+    N <- length(x)
+
+    wmask <- fmask <- weights <- NULL
+
+    column.projector <- row.projector <- NULL
+  })

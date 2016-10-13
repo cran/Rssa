@@ -1,10 +1,7 @@
 \name{calc.v}
 \alias{calc.v}
 \alias{calc.v.ssa}
-\alias{calc.v.1d.ssa}
-\alias{calc.v.toeplitz.ssa}
-\alias{calc.v.nd.ssa}
-\alias{calc.v.mssa}
+\alias{calc.v.cssa}
 
 \title{Calculate Factor Vector(s)}
 
@@ -14,10 +11,8 @@
 }
 
 \usage{
-\method{calc.v}{1d.ssa}(x, idx, \dots)
-\method{calc.v}{toeplitz.ssa}(x, idx, \dots)
-\method{calc.v}{mssa}(x, idx, \dots)
-\method{calc.v}{nd.ssa}(x, idx, \dots)
+\method{calc.v}{ssa}(x, idx, \dots)
+\method{calc.v}{cssa}(x, idx, \dots)
 }
 
 \arguments{
@@ -41,6 +36,13 @@
 \value{
   A numeric vector of suitable length (usually depends on SSA method
   and window length).
+}
+
+\seealso{
+  \code{\link{Rssa}} for an overview of the package, as well as,
+  \code{\link[Rssa:ssa-object]{ssa-object}},
+  \code{\link[Rssa:ssa]{ssa}},
+  \code{\link[Rssa:decompose.ssa]{decompose}},
 }
 
 \examples{

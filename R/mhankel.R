@@ -19,7 +19,15 @@
 
 
 .traj.dim.mssa <- function(x) {
-  c(x$window, sum(x$length - x$window + 1))
+  Ldim <- sum(x$wmask)
+  if (Ldim == 0)
+    Ldim <- x$window
+
+  Kdim <- sum(x$fmask)
+  if (Kdim == 0)
+    Kdim <- sum(x$length - x$window + 1)
+
+  c(Ldim, Kdim)
 }
 
 .hmat.striped <- function(x, fft.plan) {
@@ -50,119 +58,12 @@
                  .hmat.striped(x))
 }
 
-decompose.mssa <- function(x,
-                           neig = min(50, L, sum(K)),
-                           ...,
-                           force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-  stop("Unsupported SVD method for MSSA!")
-}
-
-decompose.mssa.svd <- function(x,
-                               neig = min(L, sum(K)),
-                               ...,
-                               force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not supported for this method.")
-
-  # Create circulant and convert it to ordinary matrix
-  h <- as.matrix.hbhmat(.get.or.create.mhmat(x))
-
-  # Do decomposition
-  S <- svd(h, nu = neig, nv = neig)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
-
-  x
-}
-
-decompose.mssa.eigen <- function(x, ...,
-                                 neig = min(L, sum(K)),
-                                 force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not supported for this method.")
-
-  # Create circulant and compute XX^T in form of ordinary matrix
-  C <- tcrossprod.hbhmat(.get.or.create.mhmat(x))
-
-  # Do decomposition
-  S <- eigen(C, symmetric = TRUE)
-
-  # Fix small negative values
-  S$values[S$values < 0] <- 0
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = sqrt(S$values[1:neig]),
-                     U = S$vectors[, 1:neig, drop = FALSE])
-
-  x
-}
-
-decompose.mssa.propack <- function(x,
-                                   neig = min(50, L, sum(K)),
-                                   ...,
-                                   force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decompostion is not yet implemented for this method.")
-
-  h <- .get.or.create.mhmat(x)
-  S <- propack.svd(h, neig = neig, ...)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
-
-  x
-}
-
-decompose.mssa.nutrlan <- function(x,
-                                   neig = min(50, L, sum(K)),
-                                   ...) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  h <- .get.or.create.mhmat(x)
-
-  sigma <- .sigma(x)
-  U <- .U(x)
-
-  S <- trlan.svd(h, neig = neig, ...,
-                 lambda = sigma, U = U)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u)
-
-  x
-}
-
-calc.v.mssa<- function(x, idx, ...) {
-  sigma <-.sigma(x)[idx]
-
-  if (any(sigma <= .Machine$double.eps)) {
-    sigma[sigma <= .Machine$double.eps] <- Inf
-    warning("some sigmas are equal to zero. The corresponding vectors will be zeroed")
-  }
-
-  U <- .U(x)[, idx, drop = FALSE]
-  h <- .get.or.create.mhmat(x)
-
-  invisible(sapply(1:length(idx),
-                   function(i) hbhmatmul(h, U[, i], transposed = TRUE) / sigma[i]))
-}
+.get.or.create.trajmat.mssa <- .get.or.create.mhmat
 
 .hankelize.one.mssa <- function(x, U, V) {
   h <- .get.or.create.hbhmat(x)
   storage.mode(U) <- storage.mode(V) <- "double"
-  F <- .Call("hbhankelize_one_fft", U, V, h)
+  F <- .Call("hbhankelize_one_fft", U, V, h@.xData)
 
   ## FIXME: This is ugly
   N <- x$length; mN <- max(N)
@@ -477,3 +378,45 @@ xyplot.matrix <- function(x, ..., outer = TRUE) {
                                         dots))
   }
 }
+
+.init.fragment.mssa <- function(this)
+  expression({
+    if (any(circular))
+      stop("Circular variant of multichannel SSA isn't implemented yet")
+
+    # We assume that we have mts-like object. With series in the columns.
+    # Coerce input to series.list object
+    # Note that this will correctly remove leading and trailing NA's
+    x <- .to.series.list(x, na.rm = TRUE)
+    # Grab the inner attributes, if any
+    iattr <- lapply(x, attributes)
+
+    N <- sapply(x, length)
+
+    # If L is provided it should be length 1
+    if (missing(L)) {
+      L <- (min(N) + 1) %/% 2
+    } else {
+      if (length(L) > 1)
+        warning("length of L is > 1, only the first element will be used")
+      L <- L[1]
+    }
+
+    wmask <- NULL
+    if (!all(N == max(N)) || any(sapply(x, anyNA))) {
+      K <- N - L + 1
+
+      weights <- matrix(0, max(N), length(N))
+      fmask <- matrix(FALSE, max(K), length(N))
+      wmask <- rep(TRUE, L)
+      for (idx in seq_along(N)) {
+        mask <- !is.na(x[[idx]])
+        fmask[seq_len(K[idx]), idx] <- .factor.mask.1d(mask, wmask)
+        weights[seq_len(N[idx]), idx] <- .field.weights.1d(wmask, fmask[seq_len(K[idx]), idx])
+      }
+    } else {
+      fmask <- weights <- NULL
+    }
+
+    column.projector <- row.projector <- NULL
+  })

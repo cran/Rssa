@@ -1,5 +1,6 @@
 \name{iossa}
 \alias{iossa}
+\alias{iossa.ssa}
 \title{Iterative O-SSA nested decomposition}
 
 \description{
@@ -7,7 +8,7 @@
 }
 
 \usage{
-iossa(x, nested.groups, \dots, tol = 1e-5, kappa = 2,
+\method{iossa}{ssa}(x, nested.groups, \dots, tol = 1e-5, kappa = 2,
       maxiter = 100,
       norm = function(x) sqrt(mean(x^2)),
       trace = FALSE,
@@ -15,7 +16,7 @@ iossa(x, nested.groups, \dots, tol = 1e-5, kappa = 2,
 }
 
 \arguments{
-  \item{x}{SSA object holding the full one-dimensional SSA (classic 1D-SSA, Toeplitz SSA) decomposition}
+  \item{x}{SSA object holding SSA decomposition}
   \item{nested.groups}{list or named list of numbers of eigentriples
     from full decomposition, describes initial grouping for IOSSA iterations}
   \item{tol}{tolerance for IOSSA iterations}
@@ -73,9 +74,10 @@ iossa(x, nested.groups, \dots, tol = 1e-5, kappa = 2,
 }
 
 \references{
-  Golyandina N. and Shlemov A. (2013): \emph{Variations of Singular
-  Spectrum Analysis for separability improvement: non-orthogonal
-  decompositions of time series}, \url{http://arxiv.org/abs/1308.4022}
+  Golyandina N. and Shlemov A. (2015): \emph{Variations of Singular Spectrum Analysis
+  for separability improvement: non-orthogonal decompositions of time series}, 
+  Statistics and Its Interface. Vol.8, No 3, P.277-294.
+  \url{http://arxiv.org/abs/1308.4022}
 }
 
 \seealso{

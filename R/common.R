@@ -58,7 +58,8 @@
 
   if (exists(name, envir = .storage(x), inherits = FALSE)) {
     val <- get(name, envir = .storage(x))
-    ret <- !is.null(val) && (typeof(val) != "externalptr" || !.is.extptrnull(val))
+    ret <- !is.null(val) && (typeof(val) != "externalptr" || !.is.extptrnull(val)) &&
+             (!isS4(val) || !inherits(val, "externalptr") || !.is.extptrnull(val@.xData))
   }
   ret
 }
@@ -327,6 +328,8 @@ calc.v <- function(x, ...)
   UseMethod("calc.v");
 wnorm <- function(x, ...)
   UseMethod("wnorm")
+nspecial <- function(x)
+  UseMethod("nspecial")
 
 .hankelize.one <- function(x, ...)
   UseMethod(".hankelize.one")
@@ -342,12 +345,12 @@ wnorm <- function(x, ...)
   UseMethod(".rowspan")
 .sigma <- function(x, ...)
   UseMethod(".sigma")
-nspecial <- function(x)
-  UseMethod("nspecial")
+.get.or.create.trajmat <- function(x, ...)
+  UseMethod(".get.or.create.trajmat")
 .elseries <- function(x, ...)
   UseMethod(".elseries")
-.init <- function(x, ...)
-  UseMethod(".init")
+.init.fragment <- function(x, ...)
+  UseMethod(".init.fragment")
 .traj.dim <- function(x, ...)
   UseMethod(".traj.dim")
 .apply.attributes <- function(x, ...)
@@ -356,4 +359,3 @@ nspecial <- function(x)
 # There is decompose() call in stats package, we need to take control over it
 decompose <- function(x, ...) UseMethod("decompose");
 decompose.default <- function(x, ...) stats::decompose(x, ...);
-formals(decompose.default) <- c(formals(decompose.default), alist(... = ));

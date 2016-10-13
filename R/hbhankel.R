@@ -21,11 +21,6 @@
 #   Routines for hankel-block hankel (aka 2d) SSA
 
 
-fft2 <- function(X, inverse = FALSE) {
-  # TODO Use FTTW here
-  t(mvfft(t(mvfft(X, inverse = inverse)), inverse = inverse))
-}
-
 .convolution.dims <- function(x.dim, y.dim, type = "circular") {
   type <- sapply(type, match.arg, choices = c("circular", "open", "filter"))
 
@@ -99,19 +94,42 @@ fft2 <- function(X, inverse = FALSE) {
   res
 }
 
-# TODO generalize to ndim case
-circle.mask <- function(R) {
-  I <- matrix(seq_len(2*R - 1), 2*R - 1, 2*R - 1)
-  J <- t(I)
+.ball.mask <- function(R, rank) {
+  I <- array(seq_len(2*R - 1), dim = rep(2*R - 1, rank))
 
-  (I - R)^2 + (J - R)^2 < R^2
+  Is <- lapply(seq_len(rank),
+               function(i) {
+                 perm <- seq_len(rank)
+                 perm[1] <- i
+                 perm[i] <- 1
+                 aperm(I, perm)
+               })
+
+  dist2 <- array(0, dim = rep(2*R - 1, rank))
+  for (I in Is) {
+    dist2 <- dist2 + (I - R)^2
+  }
+
+  dist2 <= (R - 1)^2
 }
 
-triangle.mask <- function(side) {
-  I <- matrix(seq_len(side), side, side)
-  J <- t(I)
+.simplex.mask <- function(side, rank) {
+  I <- array(seq_len(side), dim = rep(side, rank))
 
-  I + J <= side + 1
+  Is <- lapply(seq_len(rank),
+               function(i) {
+                 perm <- seq_len(rank)
+                 perm[1] <- i
+                 perm[i] <- 1
+                 aperm(I, perm)
+               })
+
+  dist <- array(0, dim = rep(side, rank))
+  for (I in Is) {
+    dist <- dist + I
+  }
+
+  dist <= side + rank - 1
 }
 
 new.hbhmat <- function(F, L = (N + 1) %/% 2,
@@ -145,25 +163,24 @@ new.hbhmat <- function(F, L = (N + 1) %/% 2,
   }
   storage.mode(weights) <- "integer"
 
-  h <- .Call("initialize_hbhmat", F, L, wmask, fmask, weights, circular)
+  h <- new("extmat",
+           .Call("initialize_hbhmat", F, L, wmask, fmask, weights, circular))
 }
 
 hbhcols <- function(h) {
-  .Call("hbhankel_cols", h)
+  ncol(h)
 }
 
 hbhrows <- function(h) {
-  .Call("hbhankel_rows", h)
+  nrow(h)
 }
 
 is.hbhmat <- function(h) {
-  .Call("is_hbhmat", h)
+  is.extmat(h) && .Call("is_hbhmat", h@.xData)
 }
 
 hbhmatmul <- function(hmat, v, transposed = FALSE) {
-  storage.mode(v) <- "double"
-  storage.mode(transposed) <- "logical"
-  .Call("hbhmatmul", hmat, v, transposed)
+  ematmul(hmat, v, transposed = transposed)
 }
 
 .get.or.create.hbhmat <- function(x) {
@@ -172,13 +189,7 @@ hbhmatmul <- function(hmat, v, transposed = FALSE) {
                             weights = x$weights, circular = x$circular))
 }
 
-as.matrix.hbhmat <- function(x) {
-  apply(diag(hbhcols(x)), 2, hbhmatmul, hmat = x)
-}
-
-tcrossprod.hbhmat <- function(x) {
-  apply(diag(hbhrows(x)), 2, function(u) hbhmatmul(hmat = x, hbhmatmul(hmat = x, u, transposed = TRUE)))
-}
+.get.or.create.trajmat.nd.ssa <- .get.or.create.hbhmat
 
 .traj.dim.nd.ssa <- function(x) {
   Ldim <- sum(x$wmask)
@@ -192,118 +203,66 @@ tcrossprod.hbhmat <- function(x) {
   c(Ldim, Kdim)
 }
 
-decompose.nd.ssa <- function(x,
-                             neig = min(50, prod(L), prod(K)),
-                             ...) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-  stop("Unsupported SVD method for 2D.SSA!")
-}
-
-decompose.nd.ssa.svd <- function(x,
-                                 neig = min(50, prod(L), prod(K)),
-                                 ...,
-                                 force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not yet implemented for this method.")
-
-  # Create circulant and convert it to ordinary matrix
-  h <- as.matrix.hbhmat(.get.or.create.hbhmat(x))
-
-  # Do decompostion
-  S <- svd(h, nu = neig, nv = neig)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
-
-  x
-}
-
-decompose.nd.ssa.eigen <- function(x,
-                                   neig = min(50, prod(L), prod(K)),
-                                   ...,
-                                   force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not yet implemented for this method.")
-
-  # Create circulant and compute XX^T in form of ordinary matrix
-  C <- tcrossprod.hbhmat(.get.or.create.hbhmat(x))
-
-  # Do decompostion
-  S <- eigen(C, symmetric = TRUE)
-
-  # Fix small negative values
-  S$values[S$values < 0] <- 0
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = sqrt(S$values[1:neig]),
-                     U = S$vectors[, 1:neig, drop = FALSE])
-
-  x
-}
-
-decompose.nd.ssa.nutrlan <- function(x,
-                                     neig = min(50, prod(L), prod(K)),
-                                     ...) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  h <- .get.or.create.hbhmat(x)
-
-  sigma <- .sigma(x)
-  U <- .U(x)
-
-  S <- trlan.svd(h, neig = neig, ...,
-                 lambda = sigma, U = U)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u)
-
-  x
-}
-
-decompose.nd.ssa.propack <- function(x,
-                                     neig = min(50, prod(L), prod(K)),
-                                     ...,
-                                     force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not yet implemented for this method.")
-
-  h <- .get.or.create.hbhmat(x)
-
-  S <- propack.svd(h, neig = neig, ...)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
-
-  x
-}
-
-calc.v.nd.ssa <- function(x, idx, ...) {
-  sigma <- .sigma(x)[idx]
-
-  if (any(sigma <= .Machine$double.eps)) {
-    sigma[sigma <= .Machine$double.eps] <- Inf
-    warning("some sigmas are equal to zero. The corresponding vectors will be zeroed")
-  }
-
-  U <- .U(x)[, idx, drop = FALSE]
-  h <- .get.or.create.hbhmat(x)
-
-  invisible(sapply(1:length(idx),
-                   function(i) hbhmatmul(h, U[, i], transposed = TRUE) / sigma[i]))
-}
-
 .hankelize.one.nd.ssa <- function(x, U, V) {
   h <- .get.or.create.hbhmat(x)
   storage.mode(U) <- storage.mode(V) <- "double"
-  .Call("hbhankelize_one_fft", U, V, h)
+  .Call("hbhankelize_one_fft", U, V, h@.xData)
 }
+
+.init.fragment.2d.ssa <- .init.fragment.nd.ssa <- function(this)
+  expression({
+    ## Coerce input to array if necessary
+    if (!is.array(x))
+      x <- as.array(x)
+    N <- dim(x)
+
+    rank <- length(dim(x))
+
+    wmask <- .fiface.eval(substitute(wmask),
+                          envir = parent.env,
+                          circle = function(...) .ball.mask(..., rank = rank),
+                          triangle = function(...) .simplex.mask(..., rank = rank))
+    ecall$wmask <- wmask
+    if (is.null(wmask)) {
+      wmask <- array(TRUE, dim = L)
+    } else {
+      L <- dim(wmask)
+    }
+
+    # Fix rank (ndims) of x
+    rank <- length(L)
+    if (length(dim(x)) < rank)
+      dim(x) <- c(dim(x), rep(1, rank - length(dim(x))))
+
+    mask <- if (is.null(mask)) !is.na(x) else mask & !is.na(x)
+
+    # Check `circular' argument
+    if (length(circular) > rank)
+      warning("Incorrect argument length: length(circular) > rank, the leading values will be used")
+    if (length(circular) != rank)
+      circular <- circular[(seq_len(rank) - 1) %% length(circular) + 1]
+
+    K <- ifelse(circular, N, N - L + 1)
+
+    fmask <- .factor.mask.2d(mask, wmask, circular = circular)
+
+    if (!all(wmask) || !all(fmask) || any(circular)) {
+      weights <- .field.weights.2d(wmask, fmask, circular = circular)
+
+      ommited <- sum(mask & (weights == 0))
+      if (ommited > 0) {
+        warning(sprintf("Some field elements were not covered by shaped window. %d elements will be ommited", ommited))
+      }
+
+      if (all(weights == 0)) {
+        warning("Nothing to decompose: the given field shape is empty")
+      }
+    } else {
+      weights <- NULL
+    }
+
+    if (all(wmask))
+      wmask <- NULL
+    if (all(fmask))
+      fmask <- NULL
+  })

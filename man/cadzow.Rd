@@ -11,7 +11,7 @@
 
 \usage{
 \method{cadzow}{ssa}(x, rank, correct = TRUE, tol = 1e-6, maxiter = 0,
-         norm = function(x) sqrt(max(x^2)),
+         norm = function(x) max(abs(x)),
          trace = FALSE, \dots, cache = TRUE)
 }
 
@@ -45,11 +45,6 @@
   far away from the optimum.
 }
 
-\seealso{
-  \code{\link{Rssa}} for an overview of the package, as well as,
-  \code{\link[Rssa:reconstruct]{reconstruct}}
-}
-
 \references{
   Cadzow J. A. (1988) Signal enhancement a composite property mapping algorithm,
   IEEE Transactions on Acoustics, Speech, and Signal Processing, 36,
@@ -60,6 +55,11 @@
   Manuscript. Cardiff School of Mathematics. Cardiff.
 }
   
+\seealso{
+  \code{\link{Rssa}} for an overview of the package, as well as,
+  \code{\link[Rssa:reconstruct]{reconstruct}}
+}
+
 \examples{
 # Decompose co2 series with default parameters
 s <- ssa(co2)
@@ -74,4 +74,27 @@ plot(ssa(F))
 F <- cadzow(s, rank = 3, maxiter = 1, correct = FALSE)
 Fr <- reconstruct(s, groups = list(1:3))$F1
 print(max(abs(F - Fr)))
+
+# Cadzow with and without weights
+set.seed(3)
+N <- 60
+L <- 30
+K <- N - L + 1
+alpha <- 0.1
+
+sigma <- 0.1
+signal <- cos(2*pi * seq_len(N) / 10)
+x <- signal + rnorm(N, sd = sigma)
+
+weights <- rep(alpha, K)
+weights[seq(1, K, L)] <- 1
+salpha <- ssa(x, L = L,
+              column.oblique = "identity",
+              row.oblique = weights)
+calpha <- cadzow(salpha, rank = 2)
+
+cz <- cadzow(ssa(x, L = L), rank = 2)
+
+print(mean((cz - signal)^2))
+print(mean((calpha - signal)^2))
 }

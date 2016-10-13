@@ -39,7 +39,7 @@
   This function is the single entry to various plots of SSA objects. Right
   now this includes:
   \describe{
-    \item{values}{plot the graph of the singular values.}
+    \item{values}{plot the graph of the component norms.}
     \item{vectors}{plot the eigenvectors.}
     \item{paired}{plot the pairs of eigenvectors (useful for the
       detection of periodic components).}
@@ -74,6 +74,12 @@
     \item{fill.color}{color or 'NULL'. Defines background color for shaped 2d-eigenvectors plot. If 'NULL', standard white
       background will be used.}
   }
+}
+
+\seealso{
+  \code{\link[Rssa:ssa-object]{ssa-object}},
+  \code{\link{ssa}}
+  \code{\link[Rssa:plot.reconstruction]{plot.reconstruction}},
 }
 
 \examples{
@@ -121,5 +127,8 @@ plot(ss, type = "vectors", idx = 1:12, slice = list(k = 1),
 plot(ss, type = "vectors", idx = 1:12, slice = list(k = 1, i = 1))
 plot(ss, type = "vectors", vectors = "factor", idx = 1:12, slice = list(k = 3),
      cuts = 50, plot.contrib = FALSE)
+plot(ss, type = "series", groups = 1:12, slice = list(k = 1))
+plot(ss, type = "series", groups = 1:12, slice = list(k = 1, i = 1))
+plot(ss, plot.method = "xyplot", type = "series", groups = 1:12, slice = list(k = 1, i = 1))
 }
 }

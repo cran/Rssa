@@ -6,7 +6,7 @@
 \alias{rforecast.toeplitz.ssa}
 \alias{rforecast.mssa}
 \alias{rforecast.cssa}
-\alias{rforecast.pssa}
+\alias{rforecast.pssa.1d.ssa}
 \title{Perform recurrent SSA forecasting of the series}
 
 \description{
@@ -26,7 +26,7 @@
 \method{rforecast}{cssa}(x, groups, len = 1, base = c("reconstructed", "original"),
           only.new = TRUE, reverse = FALSE, \dots,
           drop = TRUE, drop.attributes = FALSE, cache = TRUE)
-\method{rforecast}{pssa}(x, groups, len = 1, base = c("reconstructed", "original"),
+\method{rforecast}{pssa.1d.ssa}(x, groups, len = 1, base = c("reconstructed", "original"),
           only.new = TRUE, reverse = FALSE, \dots,
           drop = TRUE, drop.attributes = FALSE, cache = TRUE)
 }
@@ -75,7 +75,7 @@
 
   For multichannel SSA the column forecast is obtained via applying the
   LRR to each series separately. Forecast uses the formulae from
-  (Golyandina and Stepanov, 2005).
+  (Golyandina and Stepanov, 2005, and Golyandina et.al, 2015).
 }
 
 \value{
@@ -91,6 +91,11 @@
   Golyandina, N., Nekrutkin, V. and Zhigljavsky, A. (2001): \emph{Analysis of
     Time Series Structure: SSA and related techniques.} Chapman and
   Hall/CRC. ISBN 1584881941
+  
+    Golyandina, N., Korobeynikov, A., Shlemov, A. and Usevich, K. (2015):
+  \emph{Multivariate and 2D Extensions of Singular Spectrum Analysis
+    with the Rssa Package}. Journal of Statistical Software, Vol. 67, Issue 2.
+    \url{https://www.jstatsoft.org/article/view/v067i02}
 
   Golyandina, N. and Stepanov, D. (2005): \emph{SSA-based approaches to
     analysis and forecast of multidimensional time series}. In

@@ -98,6 +98,9 @@ hankel <- function(X, L) {
                           fft.plan = .get.or.create.fft.plan(x)))
 }
 
+.get.or.create.trajmat.1d.ssa <- .get.or.create.hmat
+.get.or.create.trajmat.toeplitz.ssa <- .get.or.create.hmat
+
 .hankelize.one.default <- function(U, V, fft.plan = NULL) {
   L <- length(U); K <- length(V); N = K + L - 1
   fft.plan <- (if (is.null(fft.plan)) fft.plan.1d(N) else fft.plan)
@@ -165,47 +168,28 @@ new.hmat <- function(F, L = (N + 1) %/% 2, circular = FALSE,
   storage.mode(circular) <- "logical"
 
 
-  h <- .Call("initialize_hmat", F, L, circular,
-             if (is.null(fft.plan)) fft.plan.1d(N, L, circular, wmask, fmask, weights) else fft.plan)
-}
-
-.trajectory.matrix <- function(x) {
-  # Returns trajectory matrix explicitly
-  # This matrix is used used in decompose.svd only
-
-  if (!is.shaped(x)) {
-    # Return ordinary hankel matrix
-    h <- hankel(.F(x), L = x$window)
-  } else {
-    # Get quasi-hankel linear operator
-    hmat <- .get.or.create.hmat(x)
-
-    # Convert linear operator to the explicit matrix form
-    h <- apply(diag(hcols(hmat)), 2, hmatmul, hmat = hmat)
-  }
-
-  h
+  h <- new("extmat",
+           .Call("initialize_hmat", F, L, circular,
+                 if (is.null(fft.plan)) fft.plan.1d(N, L, circular, wmask, fmask, weights) else fft.plan))
 }
 
 hcols <- function(h) {
-  .Call("hankel_cols", h)
+  ncol(h)
 }
 
 hrows <- function(h) {
-  .Call("hankel_rows", h)
+  nrow(h)
 }
 
 is.hmat <- function(h) {
-  .Call("is_hmat", h)
+  is.extmat(h) && .Call("is_hmat", h@.xData)
 }
 
 hmatmul <- function(hmat, v, transposed = FALSE) {
-  storage.mode(v) <- "double";
-  storage.mode(transposed) <- "logical";
-  .Call("hmatmul", hmat, v, transposed);
+  ematmul(hmat, v, transposed = transposed)
 }
 
-.traj.dim.default <- function(x) {
+.traj.dim.ssa <- function(x) {
   c(x$window, x$length - x$window + 1)
 }
 
@@ -221,122 +205,45 @@ hmatmul <- function(hmat, v, transposed = FALSE) {
   c(Ldim, Kdim)
 }
 
-decompose.1d.ssa <- function(x,
-                             neig = min(50, L, K),
-                             ...,
-                             force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-  stop("Unsupported SVD method for 1D SSA!")
-}
+decompose.ssa <- function(x,
+                          neig = NULL,
+                          ...,
+                          force.continue = FALSE) {
+  ## Check, whether continuation of decomposition is requested
+  if (!force.continue && nsigma(x) > 0 &&
+      !capable(x, "decompose.continue"))
+    stop("Continuation of decomposition is not yet implemented for this method.")
 
-decompose.1d.ssa.svd <- function(x,
-                                 neig = min(L, K),
-                                 ...,
-                                 force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
+  if (is.null(neig))
+    neig <- .default.neig(x, ...)
 
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not supported for this method.")
+  if (identical(x$svd.method, "svd")) {
+    S <- svd(as.matrix(.get.or.create.trajmat(x)), nu = neig, nv = neig)
+    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+  } else if (identical(x$svd.method, "eigen")) {
+    S <- eigen(tcrossprod(.get.or.create.trajmat(x)), symmetric = TRUE)
 
-  # Get hankel matrix
-  h <- .trajectory.matrix(x)
+    ## Fix small negative values
+    S$values[S$values < 0] <- 0
 
-  # Do decomposition
-  S <- svd(h, nu = neig, nv = neig)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
-
-  x
-}
-
-.Lcov.matrix <- function(x) {
-  # Returns L-covariance matrix explicitly
-  # This matrix used in decompose.eigen only
-
-  if (!is.shaped(x)) {
-    # Evaluate ordinary L-cov matrix via convolution
-
-    N <- length(F)
-    F <- .F(x)
-    storage.mode(F) <- "double"
-    L <- x$window
-    storage.mode(L) <- "integer"
-    .Call("Lcov_matrix", F, L, .get.or.create.fft.plan(x))
-  } else {
-    # Get quasi-hankel linear operator
-    h <- .get.or.create.hmat(x)
-
-    # Convert linear operator to the explicit matrix form
-    apply(diag(hrows(h)), 2, function(u) hmatmul(hmat = h, hmatmul(hmat = h, u, transposed = TRUE)))
-  }
-}
-
-decompose.1d.ssa.eigen <- function(x,
-                                   neig = min(50, L, K),
-                                   ...,
-                                   force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decomposition is not supported for this method.")
-
-  # Build hankel matrix
-  fft.plan <- .get.or.create.fft.plan(x)
-
-  # Do decomposition
-  S <- eigen(.Lcov.matrix(x), symmetric = TRUE)
-
-  # Fix small negative values
-  S$values[S$values < 0] <- 0
-
-  # Save results
-  .set.decomposition(x,
-                     sigma = sqrt(S$values[1:neig]),
-                     U = S$vectors[, 1:neig, drop = FALSE])
+    .set.decomposition(x,
+                       sigma = sqrt(S$values[1:neig]),
+                       U = S$vectors[, 1:neig, drop = FALSE])
+  } else if (identical(x$svd.method, "nutrlan")) {
+    S <- trlan.svd( .get.or.create.trajmat(x), neig = neig, ...,
+                   lambda = .sigma(x), U = .U(x))
+    .set.decomposition(x, sigma = S$d, U = S$u)
+  } else if (identical(x$svd.method, "propack")) {
+    S <- propack.svd(.get.or.create.trajmat(x), neig = neig, ...)
+    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+  } else
+    stop("unsupported SVD method")
 
   x
 }
 
-decompose.1d.ssa.propack <- function(x,
-                                     neig = min(50, L, K),
-                                     ...,
-                                     force.continue = FALSE) {
-  N <- x$length; L <- x$window; K <- N - L + 1
 
-  # Check, whether continuation of decomposition is requested
-  if (!force.continue && nsigma(x) > 0)
-    stop("Continuation of decompostion is not yet implemented for this method.")
-
-  h <- .get.or.create.hmat(x)
-  S <- propack.svd(h, neig = neig, ...)
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
-
-  x
-}
-
-decompose.1d.ssa.nutrlan <- function(x,
-                                     neig = min(50, L, K),
-                                     ...) {
-  N <- x$length; L <- x$window; K <- N - L + 1
-
-  h <- .get.or.create.hmat(x)
-
-  S <- trlan.svd(h, neig = neig, ...,
-                 lambda = .sigma(x), U = .U(x))
-
-  # Save results
-  .set.decomposition(x, sigma = S$d, U = S$u);
-
-  x
-}
-
-calc.v.1d.ssa <- function(x, idx, ...) {
-  N <- x$length; L <- x$window; K <- N - L + 1
+calc.v.ssa <- function(x, idx, ...) {
   nV <- nv(x)
 
   V <- matrix(NA_real_, .traj.dim(x)[2], length(idx))
@@ -356,10 +263,54 @@ calc.v.1d.ssa <- function(x, idx, ...) {
     }
 
     U <- .U(x)[, idx.new, drop = FALSE]
-    h <- .get.or.create.hmat(x)
-    V[, idx > nV] <- sapply(seq_along(idx.new),
-                            function(i) hmatmul(h, U[, i], transposed = TRUE) / sigma[i])
+
+    h <- .get.or.create.trajmat(x)
+    V[, idx > nV] <- crossprod(h, U) / rep(sigma, each = nrow(V))
   }
 
   invisible(V)
 }
+
+.init.fragment.1d.ssa <- function(this)
+  expression({
+  if (length(circular) > 1)
+    warning("Incorrect argument length: length(circular) > 1, the first value will be used")
+  if (length(circular) != 1)
+    circular <- circular[1]
+
+  ## Coerce input to vector (we have already saved attrs)
+  x <- as.vector(x)
+  N <- length(x)
+
+  ## Calculate masks
+  mask <- if (is.null(mask)) !is.na(x) else mask & !is.na(x)
+
+  ecall$wmask <- wmask
+  if (is.null(wmask)) {
+    wmask <- rep(TRUE, L)
+  } else {
+    L <- length(wmask)
+  }
+
+  K <- if (circular) N else N - L + 1
+
+  fmask <- .factor.mask.1d(mask, wmask, circular = circular)
+
+  if (!all(wmask) || !all(fmask) || any(circular)) {
+    weights <- .field.weights.1d(wmask, fmask, circular = circular)
+
+    ommited <- sum(mask & (weights == 0))
+    if (ommited > 0)
+      warning(sprintf("Some field elements were not covered by shaped window. %d elements will be ommited", ommited))
+
+    if (all(weights == 0))
+      warning("Nothing to decompose: the given field shape is empty")
+  } else {
+    weights <- NULL
+  }
+
+  if (all(wmask))
+    wmask <- NULL
+  if (all(fmask))
+    fmask <- NULL
+})
