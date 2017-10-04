@@ -12,10 +12,16 @@
 
 \usage{
 \method{bforecast}{1d.ssa}(x, groups, len = 1, R = 100, level = 0.95,
-          type = c("recurrent", "vector"), \dots,
+          type = c("recurrent", "vector"),
+          interval = c("confidence", "prediction"),
+          only.new = TRUE,
+          only.intervals = FALSE, \dots,
           drop = TRUE, drop.attributes = FALSE, cache = TRUE)
 \method{bforecast}{toeplitz.ssa}(x, groups, len = 1, R = 100, level = 0.95,
-          type = c("recurrent", "vector"), \dots,
+          type = c("recurrent", "vector"),
+          interval = c("confidence", "prediction"),
+          only.new = TRUE,
+          only.intervals = FALSE, \dots,
           drop = TRUE, drop.attributes = FALSE, cache = TRUE)
 }
 
@@ -25,7 +31,14 @@
   \item{len}{the desired length of the forecasted series}
   \item{R}{number of bootstrap replications}
   \item{level}{vector of confidence levels for bounds}
-  \item{type}{the type of forecast method to be used during bootstrapping}
+  \item{type}{the type of forecast method to be used during
+    bootstrapping}
+  \item{interval}{type of interval calculation}
+  \item{only.new}{logical, if 'FALSE' then confidence bounds for the
+  signal as well as prediction are reported}
+  \item{only.intervals}{logical, if 'TRUE' then bootstrap method is used
+    for confidence bounds only, otherwise --- mean bootstrap forecast is
+    returned as well}
   \item{\dots}{additional arguments passed to forecasting routines}
   \item{drop}{logical, if 'TRUE' then the result is coerced to series
     itself, when possible (length of 'groups' is one)}

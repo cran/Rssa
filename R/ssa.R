@@ -56,11 +56,6 @@
   svd.method
 }
 
-new.ssa <- function(...) {
-  warning("`new.ssa' method is deprecated, use `ssa' instead")
-  ssa(...)
-}
-
 ssa <- function(x,
                 L = (N + 1) %/% 2,
                 neig = NULL,
@@ -202,6 +197,12 @@ ssa <- function(x,
   .set(this, "column.oblique", column.oblique)
   .set(this, "row.oblique", row.oblique)
 
+  # If 'neig' is specified, then we need to decompose
+  if (!is.null(neig) && !force.decompose) {
+    warning("`force.decompose = FALSE` is ignored because number of eigentriples is specified")
+    force.decompose <- TRUE
+  }
+
   # Determine the desired number of eigentriples, if necessary
   if (is.null(neig))
     neig <- .default.neig(this, ...)
@@ -211,12 +212,6 @@ ssa <- function(x,
     svd.method <- .determine.svd.method(this, kind = kind, neig = neig, ...)
 
   this$svd.method <- svd.method
-
-  # If 'neig' is specified, then we need to decompose
-  if (!is.null(neig) && !force.decompose) {
-    warning("`force.decompose = FALSE` is ignored because number of eigentriples is specified")
-    force.decompose <- TRUE
-  }
 
   # Decompose, if necessary
   if (force.decompose) {
@@ -433,6 +428,10 @@ nlambda <- function(x) {
 
 nsigma <- function(x) {
   length(.sigma(x))
+}
+
+contributions <- function(x, idx = 1:nsigma(x)) {
+  .sigma(x)[idx]^2 / wnorm(x)^2
 }
 
 is.shaped <- function(x) {

@@ -1,4 +1,4 @@
-useDynLib(Rssa)
+useDynLib(Rssa, .registration = TRUE)
 
 import(lattice)
 import(svd)
@@ -12,10 +12,10 @@ export(clone,
        nlambda,
        nsigma,
        nspecial,
+       contributions,
        calc.v,
        precache,
        cleanup,
-       new.ssa,
        ssa,
        wcor,
        wcor.default,
@@ -54,6 +54,7 @@ export(clone,
        cadzow,
 # Non-orthogonal decompositions
        iossa,
+       eossa,
        owcor,
        fossa,
        frobenius.cor,
@@ -63,7 +64,9 @@ export(clone,
        gapfill,
        summarize.gaps,
 # Auto-grouping routines
-       grouping.auto
+       grouping.auto,
+       grouping.auto.wcor,
+       grouping.auto.pgram
        )
 
 S3method("clone", ssa)
@@ -126,8 +129,8 @@ S3method("roots", "lrr")
 S3method("plot", "lrr")
 S3method("print", "fdimpars.1d")
 S3method("plot", "fdimpars.1d")
-S3method("print", "fdimpars.2d")
-S3method("plot", "fdimpars.2d")
+S3method("print", "fdimpars.nd")
+S3method("plot", "fdimpars.nd")
 S3method("plot", "hmatr")
 S3method("print", "iossa.result")
 S3method("print", "ssa.gaps")
@@ -136,9 +139,10 @@ S3method("summary", "iossa.result")
 S3method("bforecast", "1d.ssa")
 S3method("bforecast", "toeplitz.ssa")
 S3method("parestimate", "1d.ssa")
-S3method("parestimate", "2d.ssa")
+S3method("parestimate", "nd.ssa")
 S3method("parestimate", "toeplitz.ssa")
 S3method("parestimate", "mssa")
+S3method("parestimate", "cssa")
 S3method("cadzow", "ssa")
 S3method("nspecial", "ssa")
 S3method("nspecial", "pssa")
@@ -155,6 +159,10 @@ S3method("summarize.gaps", "cssa")
 S3method("summarize.gaps", "toeplitz.ssa")
 S3method("fossa", "ssa")
 S3method("iossa", "ssa")
+S3method("grouping.auto.wcor", "ssa")
+S3method("grouping.auto.pgram", "1d.ssa")
+S3method("grouping.auto.pgram", "toeplitz.ssa")
+S3method("eossa", "ssa")
 
 ## Default imports
 importFrom("grDevices", "colorRampPalette", "grey", "heat.colors")
