@@ -1,4 +1,4 @@
-2821bbf4e6ad74ec704ddaf6d8d980da *DESCRIPTION
+840c8c43bb557c41071e8c4717be0323 *DESCRIPTION
 1275ee89d90823e68b9d66c935bc9c6a *NAMESPACE
 e8d4acbb28252519cee660a31b71a7f9 *R/autossa.R
 2320e05c98a940cf8c442d710d4117a2 *R/cadzow.R
@@ -25,8 +25,8 @@ f3678fb8c8406bb2f26cb678c7ea1f23 *R/plotn.R
 9f89cf7f8effcc9b9f9105fe2c5013d7 *R/wcor.R
 c136aa2a64b0d0fc9af62cb5f8967362 *R/wossa.R
 6d2cc35a9e83f21ab0397d49fc0626c1 *cleanup
-15b0f2f2c6dc354981406958059c7cce *configure
-12f8371e2595c3d6f9a8f09ee56341d9 *configure.ac
+fa77583295b9e04053d03aa90eaf5450 *configure
+7ce785f05b71213dc63b015482c2521a *configure.ac
 e047d46a518434c49053cad9306855b7 *configure.win
 ccf8f83f03c655cc3d1dfda8ad8cd9cf *data/AustralianWine.rda
 26b0a40cbabadbfb87315ef57bc0f76a *data/Barbara.rda
