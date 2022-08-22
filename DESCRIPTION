@@ -1,7 +1,7 @@
 Package: Rssa
 Type: Package
 Title: A Collection of Methods for Singular Spectrum Analysis
-Version: 1.0.4
+Version: 1.0.5
 Depends: R (>= 3.1), svd (>= 0.4), forecast
 Imports: lattice, methods
 Suggests: testthat (>= 0.7), RSpectra, PRIMME
@@ -17,6 +17,6 @@ License: GPL (>= 2)
 URL: https://github.com/asl/rssa
 BugReports: https://github.com/asl/rssa/issues
 NeedsCompilation: yes
-Packaged: 2021-10-05 12:34:04 UTC; asl
+Packaged: 2022-08-22 14:12:59 UTC; asl
 Repository: CRAN
-Date/Publication: 2021-10-05 19:30:02 UTC
+Date/Publication: 2022-08-22 22:10:02 UTC
