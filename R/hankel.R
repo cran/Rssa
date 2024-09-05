@@ -101,23 +101,23 @@ hankel <- function(X, L) {
 .get.or.create.trajmat.1d.ssa <- .get.or.create.hmat
 .get.or.create.trajmat.toeplitz.ssa <- .get.or.create.hmat
 
-.hankelize.one.default <- function(U, V, fft.plan = NULL) {
-  L <- length(U); K <- length(V); N = K + L - 1
+.hankelize.one.default <- function(x, V, ..., fft.plan = NULL) {
+  L <- length(x); K <- length(V); N = K + L - 1
   fft.plan <- (if (is.null(fft.plan)) fft.plan.1d(N) else fft.plan)
-  storage.mode(U) <- storage.mode(V) <- "double"
-  .Call("hankelize_one_fft", U, V, fft.plan)
+  storage.mode(x) <- storage.mode(V) <- "double"
+  .Call("hankelize_one_fft", x, V, fft.plan)
 }
 
-.hankelize.one.1d.ssa <- function(x, U, V, fft.plan = NULL) {
+.hankelize.one.1d.ssa <- function(x, U, V, ..., fft.plan = NULL) {
   fft.plan <- (if (is.null(fft.plan)) .get.or.create.fft.plan(x) else fft.plan)
   storage.mode(U) <- storage.mode(V) <- "double"
   .Call("hankelize_one_fft", U, V, fft.plan)
 }
 
-.hankelize.multi.default <- function(U, V, fft.plan) {
+.hankelize.multi.default <- function(x, V, ..., fft.plan) {
   stopifnot(is.numeric(V))
-  storage.mode(U) <- storage.mode(V) <- "double"
-  .Call("hankelize_multi_fft", U, V, fft.plan)
+  storage.mode(x) <- storage.mode(V) <- "double"
+  .Call("hankelize_multi_fft", x, V, fft.plan)
 }
 
 fft.plan.1d <- function(N, L, circular = FALSE,
@@ -243,13 +243,27 @@ decompose.ssa <- function(x,
     A <- function(x, args) ematmul(args, x)
     Atrans <- function(x, args) ematmul(args, x, transposed = TRUE)
     S <- RSpectra::svds(A, k = neig, Atrans = Atrans, dim = dim(h), args = h, ...)
-    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+    ## RSpectra sometimes returns unsorted results
+    idx <- order(S$d, decreasing = TRUE)
+    .set.decomposition(x, sigma = S$d[idx], U = S$u[, idx], V = S$v[, idx])
   } else if (identical(x$svd.method, "primme")) {
     if (!requireNamespace("PRIMME", quietly = TRUE))
         stop("PRIMME package is required for SVD method `primme'")
     h <- .get.or.create.trajmat(x)
     pA <-function(x, trans) if (identical(trans, "c")) crossprod(h, x) else h %*% x
     S <- PRIMME::svds(pA, NSvals = neig, m = nrow(h), n = ncol(h), isreal = TRUE, ...)
+    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+  } else if (identical(x$svd.method, "irlba")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+        stop("irlba package is required for SVD method `irlba'")
+    h <- .get.or.create.trajmat(x)
+    S <- irlba::irlba(h, nv = neig, ...)
+    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+  } else if (identical(x$svd.method, "rsvd")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+        stop("irlba package is required for SVD method `rsvd'")
+    h <- .get.or.create.trajmat(x)
+    S <- irlba::svdr(h, k = neig, ...)
     .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
   } else
     stop("unsupported SVD method")
@@ -286,7 +300,7 @@ calc.v.ssa <- function(x, idx, ...) {
   invisible(V)
 }
 
-.init.fragment.1d.ssa <- function(this)
+.init.fragment.1d.ssa <- function(this, ...)
   expression({
   if (length(circular) > 1)
     warning("Incorrect argument length: length(circular) > 1, the first value will be used")

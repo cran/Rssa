@@ -27,15 +27,15 @@ void free_area(area_indices *area) {
   if (area == NULL) {
     return;
   }
-  Free(area->ind);
-  Free(area);
+  R_Free(area->ind);
+  R_Free(area);
 }
 
 unsigned *alloc_weights(SEXP weights) {
   if (weights == R_NilValue) {
     error("the weights should be precomputed.");
   }
-  unsigned *wcopy = Calloc(length(weights), unsigned);
+  unsigned *wcopy = R_Calloc(length(weights), unsigned);
   memcpy(wcopy, INTEGER(weights), sizeof(unsigned) * length(weights));
   return wcopy;
 }

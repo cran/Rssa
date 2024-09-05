@@ -90,7 +90,7 @@ static inline void fill_subarray(double *big,
   R_len_t pNsmall = prod(rank, Nsmall);
   R_len_t *mul, i, j, ii, r;
 
-  mul = Calloc(rank, R_len_t);
+  mul = R_Calloc(rank, R_len_t);
   mul[0] = 1;
   for (r = 1; r < rank; ++r)
     mul[r] = mul[r-1] * Nbig[r-1];
@@ -109,14 +109,14 @@ static inline void fill_subarray(double *big,
       small[i] = big[j];
   }
 
-  Free(mul);
+  R_Free(mul);
 }
 
 #if HAVE_FFTW3_H
 static void free_circulant(hbhankel_matrix *h) {
-  Free(h->window);
-  Free(h->factor);
-  Free(h->length);
+  R_Free(h->window);
+  R_Free(h->factor);
+  R_Free(h->length);
 
   fftw_free(h->circ_freq);
   fftw_destroy_plan(h->r2c_plan);
@@ -141,11 +141,11 @@ static void initialize_circulant(hbhankel_matrix *h,
   /* Estimate the best plans for given input length, note, that input data is
      stored in column-major mode, that's why we're passing dimensions in
      *reverse* order */
-  revN = Calloc(rank, R_len_t);
+  revN = R_Calloc(rank, R_len_t);
   for (r = 0; r < rank; ++r) revN[r] = N[rank - 1 - r];
   p1 = fftw_plan_dft_r2c(rank, revN, circ, ocirc, FFTW_ESTIMATE);
   p2 = fftw_plan_dft_c2r(rank, revN, ocirc, circ, FFTW_ESTIMATE);
-  Free(revN);
+  R_Free(revN);
 
   /* Fill input buffer */
   memcpy(circ, F, prod(rank, N) * sizeof(double));
@@ -162,13 +162,13 @@ static void initialize_circulant(hbhankel_matrix *h,
 
   h->rank = rank;
 
-  h->window = Calloc(rank, R_len_t);
+  h->window = R_Calloc(rank, R_len_t);
   memcpy(h->window, L, rank * sizeof(R_len_t));
 
-  h->length = Calloc(rank, R_len_t);
+  h->length = R_Calloc(rank, R_len_t);
   memcpy(h->length, N, rank * sizeof(R_len_t));
 
-  h->factor = Calloc(rank, R_len_t);
+  h->factor = R_Calloc(rank, R_len_t);
   for (r = 0; r < rank; ++r) h->factor[r] = circular[r] ? N[r] : N[r] - L[r] + 1;
 }
 
@@ -356,11 +356,11 @@ SEXP convolveN(SEXP x, SEXP y,
   /* Estimate the best plans for given input length, note, that input data is
      stored in column-major mode, that's why we're passing dimensions in
      *reverse* order */
-  revN = Calloc(rank, R_len_t);
+  revN = R_Calloc(rank, R_len_t);
   for (r = 0; r < rank; ++r) revN[r] = N[rank - 1 - r];
   r2c_plan = fftw_plan_dft_r2c(rank, revN, circ, ox, FFTW_ESTIMATE);
   c2r_plan = fftw_plan_dft_c2r(rank, revN, ox, circ, FFTW_ESTIMATE);
-  Free(revN);
+  R_Free(revN);
 
   PROTECT(x_dim = getAttrib(x, R_DimSymbol));
   PROTECT(y_dim = getAttrib(y, R_DimSymbol));
@@ -455,11 +455,11 @@ static void fftn_c2r(const Rcomplex *z, R_len_t rank, const R_len_t *N,
 }
 
 static void free_circulant(hbhankel_matrix *h) {
-  Free(h->window);
-  Free(h->factor);
-  Free(h->length);
+  R_Free(h->window);
+  R_Free(h->factor);
+  R_Free(h->length);
 
-  Free(h->circ_freq);
+  R_Free(h->circ_freq);
 }
 
 static void initialize_circulant(hbhankel_matrix *h,
@@ -472,7 +472,7 @@ static void initialize_circulant(hbhankel_matrix *h,
   R_len_t r;
 
   /* Allocate needed memory */
-  ocirc = Calloc(prod(rank, N), Rcomplex);
+  ocirc = R_Calloc(prod(rank, N), Rcomplex);
 
   /* Perform FFTn on input data */
   /* We don't need input buffer here */
@@ -483,13 +483,13 @@ static void initialize_circulant(hbhankel_matrix *h,
 
   h->rank = rank;
 
-  h->window = Calloc(rank, R_len_t);
+  h->window = R_Calloc(rank, R_len_t);
   memcpy(h->window, L, rank * sizeof(R_len_t));
 
-  h->length = Calloc(rank, R_len_t);
+  h->length = R_Calloc(rank, R_len_t);
   memcpy(h->length, N, rank * sizeof(R_len_t));
 
-  h->factor = Calloc(rank, R_len_t);
+  h->factor = R_Calloc(rank, R_len_t);
   for (r = 0; r < rank; ++r) h->factor[r] = circular[r] ? N[r] : N[r] - L[r] + 1;
 }
 
@@ -503,7 +503,7 @@ static void convolveNd_half(const Rcomplex *ox,
   R_len_t pN = prod(rank, N);
 
   /* Allocate needed memory */
-  oy = Calloc(pN, Rcomplex);
+  oy = R_Calloc(pN, Rcomplex);
 
   /* Compute the Nd-FFT of the matrix y */
   fftn_r2c(y, rank, N, oy);
@@ -524,7 +524,7 @@ static void convolveNd_half(const Rcomplex *ox,
   fftn_c2r(oy, rank, N, y);
 
   /* Cleanup */
-  Free(oy);
+  R_Free(oy);
 }
 
 static void convolveNd(double *x,
@@ -536,7 +536,7 @@ static void convolveNd(double *x,
   R_len_t pN = prod(rank, N);
 
   /* Allocate needed memory */
-  ox = Calloc(pN, Rcomplex);
+  ox = R_Calloc(pN, Rcomplex);
 
   /* Compute the NdFFT of the arrays x and y */
   fftn_r2c(x, rank, N, ox);
@@ -544,7 +544,7 @@ static void convolveNd(double *x,
   convolveNd_half(ox, y, rank, N, conjugate);
 
   /* Cleanup */
-  Free(ox);
+  R_Free(ox);
 }
 
 static void matmul(double* out,
@@ -574,7 +574,7 @@ static void matmul(double* out,
   }
 
   /* Allocate needed memory */
-  circ = Calloc(pN, double);
+  circ = R_Calloc(pN, double);
 
   /* Fill the arrays */
   memset(circ, 0, pN * sizeof(double));
@@ -599,7 +599,7 @@ static void matmul(double* out,
     }
   }
 
-  Free(circ);
+  R_Free(circ);
 }
 
 
@@ -616,8 +616,8 @@ static R_INLINE void hbhankelize_fft(double *F,
   double *iU, *iV;
 
   /* Allocate needed memory */
-  iU = Calloc(pN, double);
-  iV = Calloc(pN, double);
+  iU = R_Calloc(pN, double);
+  iV = R_Calloc(pN, double);
 
   /* Fill the arrays */
   memset(iU, 0, pN * sizeof(double));
@@ -650,8 +650,8 @@ static R_INLINE void hbhankelize_fft(double *F,
     }
   }
 
-  Free(iU);
-  Free(iV);
+  R_Free(iU);
+  R_Free(iV);
 }
 
 SEXP convolveN(SEXP x, SEXP y,
@@ -669,9 +669,9 @@ SEXP convolveN(SEXP x, SEXP y,
   R_len_t i;
 
   /* Allocate needed memory */
-  circ = Calloc(pN, double);
-  ox = Calloc(pN, Rcomplex);
-  oy = Calloc(pN, Rcomplex);
+  circ = R_Calloc(pN, double);
+  ox = R_Calloc(pN, Rcomplex);
+  oy = R_Calloc(pN, Rcomplex);
 
   /* Fill input buffer by X values*/
   memset(circ, 0, pN * sizeof(double));
@@ -708,9 +708,9 @@ SEXP convolveN(SEXP x, SEXP y,
   setAttrib(res, R_DimSymbol, output_dim);
 
   /* Cleanup */
-  Free(ox);
-  Free(oy);
-  Free(circ);
+  R_Free(ox);
+  R_Free(oy);
+  R_Free(circ);
 
   /* Return */
   UNPROTECT(1);
@@ -735,7 +735,7 @@ static area_indices *alloc_area2d(SEXP mask, SEXP N) {
   if (mask == R_NilValue) {
     return NULL;
   }
-  area_indices *area = Calloc(1, area_indices);
+  area_indices *area = R_Calloc(1, area_indices);
   int *maskValues = LOGICAL(mask);
   SEXP DIM = getAttrib(mask, R_DimSymbol);
   R_len_t *dimMask = INTEGER(DIM);
@@ -749,9 +749,9 @@ static area_indices *alloc_area2d(SEXP mask, SEXP N) {
     area->num += maskValues[ind];
   }
 
-  area->ind = Calloc(area->num, R_len_t);
+  area->ind = R_Calloc(area->num, R_len_t);
 
-  R_len_t *mul = Calloc(rank, R_len_t);
+  R_len_t *mul = R_Calloc(rank, R_len_t);
   mul[0] = 1;
   for (r = 1; r < rank; ++r)
     mul[r] = mul[r-1] * INTEGER(N)[r-1];
@@ -770,7 +770,7 @@ static area_indices *alloc_area2d(SEXP mask, SEXP N) {
     }
   }
 
-  Free(mul);
+  R_Free(mul);
 
   return area;
 }
@@ -793,12 +793,12 @@ static void hbhmat_finalizer(SEXP ptr) {
 
   free_area(h->col_ind);
   free_area(h->row_ind);
-  Free(h->weights);
+  R_Free(h->weights);
 
   free_circulant(h);
-  Free(h);
+  R_Free(h);
 
-  Free(e);
+  R_Free(e);
   R_ClearExternalPtr(ptr);
 }
 
@@ -812,7 +812,7 @@ SEXP initialize_hbhmat(SEXP F, SEXP window,
   PROTECT(N = getAttrib(F, R_DimSymbol));
 
   /* Allocate memory */
-  e = Calloc(1, ext_matrix);
+  e = R_Calloc(1, ext_matrix);
   e->type = "hbhankel matrix";
   e->mulfn = hbhankel_matmul;
   e->tmulfn = hbhankel_tmatmul;
@@ -820,7 +820,7 @@ SEXP initialize_hbhmat(SEXP F, SEXP window,
   e->nrow = hbhankel_nrow;
 
   /* Build toeplitz circulants for hankel matrix */
-  h = Calloc(1, hbhankel_matrix);
+  h = R_Calloc(1, hbhankel_matrix);
   initialize_circulant(h, REAL(F), length(N), INTEGER(N), INTEGER(window), LOGICAL(circular));
   /* TODO: add a check for correct window sizes */
   h->col_ind = alloc_area2d(wmask, N);

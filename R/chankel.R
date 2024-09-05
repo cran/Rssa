@@ -46,6 +46,37 @@
 
 .get.or.create.trajmat.cssa <- .get.or.create.chmat
 
+
+.cchmat <- function(x, fft.plan) {
+  N <- x$length; L <- x$window; K <- N - L + 1
+  F <- .F(x)
+
+  R <- new.hmat(Re(F), L = L, fft.plan = fft.plan)
+  I <- new.hmat(Im(F), L = L, fft.plan = fft.plan)
+
+  matmul <- function(x) {
+    rX <- Re(x); iX <- Im(x)
+
+      (hmatmul(R, rX, transposed = FALSE) - hmatmul(I, iX, transposed = FALSE)) +
+   1i*(hmatmul(I, rX, transposed = FALSE) + hmatmul(R, iX, transposed = FALSE))
+  }
+
+  tmatmul <- function(x) {
+    rX <- Re(x); iX <- Im(x)
+
+       (hmatmul(R, rX, transposed = TRUE) + hmatmul(I, iX, transposed = TRUE)) +
+    1i*(hmatmul(R, iX, transposed = TRUE) - hmatmul(I, rX, transposed = TRUE))
+  }
+
+  extmat(matmul, tmatmul, nrow = L, ncol = K)
+}
+
+.get.or.create.cchmat <- function(x) {
+  .get.or.create(x, "chmat",
+                 .cchmat(x, fft.plan = .get.or.create.cfft.plan(x)))
+}
+
+
 decompose.cssa <- function(x,
                            neig = NULL,
                            ...,
@@ -105,6 +136,24 @@ decompose.cssa <- function(x,
     }
     S <- PRIMME::svds(A, NSvals = neig, m = nrow(R), n = ncol(R), isreal = FALSE, ...)
     .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+  } else if (identical(x$svd.method, "irlba")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+      stop("irlba package is required for SVD method `irlba'")
+
+    ## Uncomment after https://github.com/bwlewis/irlba/issues/73 is fixed
+    # h <- .get.or.create.cchmat(x)
+    h <- hankel(.F(x), L = x$window)
+    S <- irlba::irlba(h, nv = neig, ...)
+    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
+  } else if (identical(x$svd.method, "rsvd")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+      stop("irlba package is required for SVD method `rsvd'")
+
+    ## Uncomment after https://github.com/bwlewis/irlba/issues/73 is fixed
+    # h <- .get.or.create.cchmat(x)
+    h <- hankel(.F(x), L = x$window)
+    S <- irlba::svdr(h, k = neig, ...)
+    .set.decomposition(x, sigma = S$d, U = S$u, V = S$v)
   } else
     stop("unsupported SVD method")
 
@@ -144,7 +193,7 @@ calc.v.cssa <- function(x, idx, ...) {
   invisible(V)
 }
 
-.hankelize.one.cssa <- function(x, U, V, fft.plan = .get.or.create.cfft.plan(x)) {
+.hankelize.one.cssa <- function(x, U, V, ..., fft.plan = .get.or.create.cfft.plan(x)) {
   R1 <- .hankelize.one.default(Re(U), Re(V), fft.plan = fft.plan)
   R2 <- .hankelize.one.default(Im(U), Im(V), fft.plan = fft.plan)
   I1 <- .hankelize.one.default(Re(U), Im(V), fft.plan = fft.plan)
@@ -153,8 +202,8 @@ calc.v.cssa <- function(x, idx, ...) {
   (R1 + R2) + 1i*(-I1 + I2)
 }
 
-.hankelize.multi.complex <- function(U, V, fft.plan) {
-  ReU <- Re(U); ReV <- Re(V); ImU <- Im(U); ImV <- Im(V)
+.hankelize.multi.complex <- function(x, V, ..., fft.plan) {
+  ReU <- Re(x); ReV <- Re(V); ImU <- Im(x); ImV <- Im(V)
   storage.mode(ReU) <- storage.mode(ReV) <- storage.mode(ImU) <- storage.mode(ImV) <- "double"
   R1 <- .Call("hankelize_multi_fft", ReU, ReV, fft.plan)
   R2 <- .Call("hankelize_multi_fft", ImU, ImV, fft.plan)

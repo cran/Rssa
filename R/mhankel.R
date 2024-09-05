@@ -60,7 +60,7 @@
 
 .get.or.create.trajmat.mssa <- .get.or.create.mhmat
 
-.hankelize.one.mssa <- function(x, U, V) {
+.hankelize.one.mssa <- function(x, U, V, ...) {
   h <- .get.or.create.hbhmat(x)
   storage.mode(U) <- storage.mode(V) <- "double"
   F <- .Call("hbhankelize_one_fft", U, V, h@.xData)
@@ -107,6 +107,7 @@
 }
 
 .apply.attributes.mssa <- function(x, F,
+                                   ...,
                                    fixup = FALSE,
                                    only.new = TRUE, drop = FALSE) {
   ia <- (if (drop) NULL else .get(x, "Iattr"))

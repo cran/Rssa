@@ -150,13 +150,27 @@ decompose.wossa <- function(x,
     Atrans <- function(x, args) ematmul(args, x, transposed = TRUE)
     S <- RSpectra::svds(A,
                         k = neig, Atrans = Atrans, dim = dim(h), args = h, ...)
-    oU <- S$u; oV <- S$v; osigma <- S$d
+    ## RSpectra sometimes returns unsorted results
+    idx <- order(S$d, decreasing = TRUE)
+    oU <- S$u[, idx]; oV <- S$v[, idx]; osigma <- S$d[idx]
   } else if (identical(x$svd.method, "primme")) {
     if (!requireNamespace("PRIMME", quietly = TRUE))
         stop("PRIMME package is requireNamespaced for SVD method `primme'")
     h <- .get.or.create.whmat(x)
     pA <-function(x, trans) if (identical(trans, "c")) crossprod(h, x) else h %*% x
     S <- PRIMME::svds(pA, NSvals = neig, m = nrow(h), n = ncol(h), isreal = TRUE, ...)
+    oU <- S$u; oV <- S$v; osigma <- S$d
+  } else if (identical(x$svd.method, "irlba")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+        stop("irlba package is required for SVD method `irlba'")
+    h <- .get.or.create.whmat(x)
+    S <- irlba::irlba(h, nv = neig, ...)
+    oU <- S$u; oV <- S$v; osigma <- S$d
+  } else if (identical(x$svd.method, "rsvd")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+        stop("irlba package is required for SVD method `rsvd'")
+    h <- .get.or.create.whmat(x)
+    S <- irlba::svdr(h, k = neig, ...)
     oU <- S$u; oV <- S$v; osigma <- S$d
   } else
     stop("unsupported SVD method")
@@ -183,7 +197,7 @@ decompose.wossa <- function(x,
   x
 }
 
-.init.fragment.wossa <- function(this)
+.init.fragment.wossa <- function(this, ...)
   expression({
     ## First, initialize the main object
     ## We cannot use NextMethod here due to non-standard evaluation

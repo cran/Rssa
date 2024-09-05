@@ -491,7 +491,7 @@ static area_indices *alloc_area1d(SEXP mask) {
   if (mask == R_NilValue) {
     return NULL;
   }
-  area_indices *area = Calloc(1, area_indices);
+  area_indices *area = R_Calloc(1, area_indices);
   int *maskValues = LOGICAL(mask);
   R_len_t max_ind = length(mask);
 
@@ -502,7 +502,7 @@ static area_indices *alloc_area1d(SEXP mask) {
     area->num += maskValues[ind];
   }
 
-  area->ind = Calloc(area->num, R_len_t);
+  area->ind = R_Calloc(area->num, R_len_t);
 
   /* Fill in the arrays of indices */
   R_len_t k;
@@ -529,9 +529,9 @@ static void fft_plan_finalizer(SEXP ptr) {
   free_plan(f);
   free_area(f->col_ind);
   free_area(f->row_ind);
-  Free(f->weights);
+  R_Free(f->weights);
 
-  Free(f);
+  R_Free(f);
 
   R_ClearExternalPtr(ptr);
 }
@@ -544,7 +544,7 @@ SEXP initialize_fft_plan(SEXP rN, SEXP wmask, SEXP fmask, SEXP weights) {
   N = INTEGER(rN)[0];
 
   /* Allocate memory */
-  f = Calloc(1, fft_plan);
+  f = R_Calloc(1, fft_plan);
 
   /* Do actual plan initialization */
   initialize_plan(f, N);
@@ -607,9 +607,9 @@ static void hmat_finalizer(SEXP ptr) {
   h = e->matrix;
 
   free_circulant(h);
-  Free(h);
+  R_Free(h);
 
-  Free(e);
+  R_Free(e);
   R_ClearExternalPtr(ptr);
 }
 
@@ -629,7 +629,7 @@ SEXP initialize_hmat(SEXP F, SEXP window, SEXP circular, SEXP fft_plan) {
   L = INTEGER(window)[0];
 
   /* Allocate memory */
-  e = Calloc(1, ext_matrix);
+  e = R_Calloc(1, ext_matrix);
   e->type = "hankel matrix";
   e->mulfn = hankel_matmul;
   e->tmulfn = hankel_tmatmul;
@@ -637,7 +637,7 @@ SEXP initialize_hmat(SEXP F, SEXP window, SEXP circular, SEXP fft_plan) {
   e->nrow = hankel_nrow;
 
   /* Build toeplitz circulants for hankel matrix */
-  h = Calloc(1, hankel_matrix);
+  h = R_Calloc(1, hankel_matrix);
 
   initialize_circulant(h, R_ExternalPtrAddr(fft_plan), REAL(F), N, L, LOGICAL(circular));
   e->matrix = h;

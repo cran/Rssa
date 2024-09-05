@@ -377,9 +377,9 @@ static void tmat_finalizer(SEXP ptr) {
   h = e->matrix;
 
   free_circulant(h);
-  Free(h);
+  R_Free(h);
 
-  Free(e);
+  R_Free(e);
   R_ClearExternalPtr(ptr);
 }
 
@@ -392,7 +392,7 @@ SEXP initialize_tmat(SEXP R, SEXP fft_plan) {
   L = length(R);
 
   /* Allocate memory */
-  e = Calloc(1, ext_matrix);
+  e = R_Calloc(1, ext_matrix);
   e->type = "toeplitz matrix";
   e->mulfn = toeplitz_matmul;
   e->tmulfn = toeplitz_tmatmul;
@@ -400,7 +400,7 @@ SEXP initialize_tmat(SEXP R, SEXP fft_plan) {
   e->nrow = toeplitz_nrow;
 
   /* Build toeplitz circulants for toeplitz matrix */
-  t = Calloc(1, toeplitz_matrix);
+  t = R_Calloc(1, toeplitz_matrix);
   initialize_circulant(t, R_ExternalPtrAddr(fft_plan), REAL(R), L);
   e->matrix = t;
 

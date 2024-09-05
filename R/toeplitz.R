@@ -99,7 +99,9 @@ decompose.toeplitz.ssa <- function(x,
     A <- function(x, args) ematmul(args, x)
     Atrans <- function(x, args) ematmul(args, x, transposed = TRUE)
     S <- RSpectra::svds(A, k = neig, Atrans = Atrans, dim = dim(h), args = h, ...)
-    U <- S$u
+    ## RSpectra sometimes returns unsorted results
+    idx <- order(S$d, decreasing = TRUE)
+    U <- S$u[, idx]
     lambda <- NULL
   } else if (identical(x$svd.method, "primme")) {
     if (!requireNamespace("PRIMME", quietly = TRUE))
@@ -107,6 +109,20 @@ decompose.toeplitz.ssa <- function(x,
     h <- .get.or.create.tmat(x)
     pA <-function(x, trans) if (identical(trans, "c")) crossprod(h, x) else h %*% x
     S <- PRIMME::svds(pA, NSvals = neig, m = nrow(h), n = ncol(h), isreal = TRUE, ...)
+    U <- S$u
+    lambda <- NULL
+  } else if (identical(x$svd.method, "irlba")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+        stop("irlba package is required for SVD method `irlba'")
+    h <- .get.or.create.tmat(x)
+    S <- irlba::irlba(h, nv = neig, ...)
+    U <- S$u
+    lambda <- NULL
+  } else if (identical(x$svd.method, "rsvd")) {
+    if (!requireNamespace("irlba", quietly = TRUE))
+        stop("irlba package is required for SVD method `rsvd'")
+    h <- .get.or.create.tmat(x)
+    S <- irlba::svdr(h, k = neig, ...)
     U <- S$u
     lambda <- NULL
   } else

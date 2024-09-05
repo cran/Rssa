@@ -20,7 +20,8 @@ ssa(x,
     \dots,
     kind = c("1d-ssa", "2d-ssa", "nd-ssa", "toeplitz-ssa", "mssa", "cssa"),
     circular = FALSE,
-    svd.method = c("auto", "nutrlan", "propack", "svd", "eigen", "rspectra", "primme"),
+    svd.method = c("auto", "nutrlan", "propack", "svd", "eigen", 
+                   "rspectra", "primme", "irlba", "rsvd"),
     force.decompose = TRUE)
 }
 
@@ -179,6 +180,10 @@ ssa(x,
       \item{rspectra}{SVD via \code{svds} function from Rspectra package
         (if installed)}
       \item{primme}{SVD via \code{svds} function from PRIMME package
+        (if installed)}
+      \item{irlba}{SVD via \code{svds} function from irlba package
+        (if installed)}
+      \item{rsvd}{SVD via \code{svdr} function from irlba package
         (if installed)}
     }
 

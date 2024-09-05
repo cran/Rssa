@@ -203,7 +203,7 @@ hbhmatmul <- function(hmat, v, transposed = FALSE) {
   c(Ldim, Kdim)
 }
 
-.hankelize.one.nd.ssa <- function(x, U, V) {
+.hankelize.one.nd.ssa <- function(x, U, V, ...) {
   h <- .get.or.create.hbhmat(x)
   storage.mode(U) <- storage.mode(V) <- "double"
   .Call("hbhankelize_one_fft", U, V, h@.xData)

@@ -46,7 +46,7 @@ print.fdimpars.1d <- function(x, ...) {
   }
 }
 
-parestimate.pairs <- function(U, normalize = FALSE) {
+.parestimate.pairs <- function(U, normalize = FALSE) {
   # Sanity check
   stopifnot(ncol(U) == 2)
 
@@ -173,7 +173,7 @@ tls.solve <- function(A, B) {
     group <- groups[[i]]
     if (length(group) != 2)
       stop("can estimate for pair of eigenvectors only using `pairs' method")
-    out[[i]] <- parestimate.pairs(span(x, group), normalize = normalize.roots)
+    out[[i]] <- .parestimate.pairs(span(x, group), normalize = normalize.roots)
   }
 
   names(out) <- .group.names(groups)

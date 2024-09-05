@@ -65,7 +65,7 @@ ssa <- function(x,
                 ...,
                 kind = c("1d-ssa", "2d-ssa", "nd-ssa", "toeplitz-ssa", "mssa", "cssa"),
                 circular = FALSE,
-                svd.method = c("auto", "nutrlan", "propack", "svd", "eigen", "rspectra", "primme"),
+                svd.method = c("auto", "nutrlan", "propack", "svd", "eigen", "rspectra", "primme", "irlba", "rsvd"),
                 force.decompose = TRUE) {
   svd.method <- match.arg(svd.method)
 
@@ -224,9 +224,9 @@ ssa <- function(x,
   this;
 }
 
-.init.fragment.default <- function(x, ...) {
+.init.fragment.default <- function(this, ...) {
   # Do nothing
-  x
+  this
 }
 
 .maybe.continue <- function(x, groups, ...) {
@@ -272,6 +272,7 @@ cleanup <- function(x) {
 }
 
 .apply.attributes.default <- function(x, F,
+                                      ...,
                                       fixup = FALSE, only.new = TRUE,
                                       reverse = FALSE,
                                       drop = FALSE) {
